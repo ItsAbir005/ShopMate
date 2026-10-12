@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import { CheckCircle2, XCircle, Info, AlertTriangle, X } from "lucide-react";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 type ToastType = "success" | "error" | "info" | "warning";
 
 interface Toast {
@@ -16,7 +16,6 @@ interface ToastContextValue {
     toast: (type: ToastType, title: string, message?: string) => void;
 }
 
-// ── Context ───────────────────────────────────────────────────────────────────
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 export const useToast = () => {
@@ -25,115 +24,55 @@ export const useToast = () => {
     return ctx;
 };
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-const ICONS: Record<ToastType, string> = {
-    success: "✅",
-    error: "❌",
-    info: "ℹ️",
-    warning: "⚠️",
+const ICONS = {
+    success: CheckCircle2,
+    error: XCircle,
+    info: Info,
+    warning: AlertTriangle,
 };
 
-const COLORS: Record<ToastType, { bar: string; border: string; bg: string }> = {
-    success: {
-        bar: "#34d399",
-        border: "rgba(52,211,153,0.25)",
-        bg: "rgba(52,211,153,0.06)",
-    },
-    error: {
-        bar: "#f87171",
-        border: "rgba(248,113,113,0.25)",
-        bg: "rgba(248,113,113,0.06)",
-    },
-    info: {
-        bar: "#818cf8",
-        border: "rgba(129,140,248,0.25)",
-        bg: "rgba(129,140,248,0.06)",
-    },
-    warning: {
-        bar: "#fbbf24",
-        border: "rgba(251,191,36,0.25)",
-        bg: "rgba(251,191,36,0.06)",
-    },
+const ICON_COLORS = {
+    success: "text-emerald-600",
+    error: "text-red-600",
+    info: "text-indigo-600",
+    warning: "text-amber-600",
 };
 
-// ── Toast Item ─────────────────────────────────────────────────────────────────
+const BORDER_COLORS = {
+    success: "border-l-emerald-500",
+    error: "border-l-red-500",
+    info: "border-l-indigo-500",
+    warning: "border-l-amber-500",
+};
+
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
-    const c = COLORS[toast.type];
+    const Icon = ICONS[toast.type];
+    const iconColor = ICON_COLORS[toast.type];
+    const borderLeft = BORDER_COLORS[toast.type];
+
     return (
-        <div
-            style={{
-                background: `linear-gradient(135deg, ${c.bg}, rgba(19,19,31,0.95))`,
-                border: `1px solid ${c.border}`,
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                borderRadius: "14px",
-                padding: "14px 16px 14px 18px",
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "12px",
-                minWidth: "320px",
-                maxWidth: "420px",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-                position: "relative",
-                overflow: "hidden",
-                animation: "slideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
-            }}
-        >
-            {/* Left color bar */}
-            <div
-                style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: "4px",
-                    background: c.bar,
-                    borderRadius: "14px 0 0 14px",
-                }}
-            />
-
-            {/* Icon */}
-            <span style={{ fontSize: "18px", lineHeight: 1, marginTop: "1px", flexShrink: 0 }}>
-                {ICONS[toast.type]}
-            </span>
-
-            {/* Content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontWeight: 600, fontSize: "14px", color: "#e2e8f0" }}>
+        <div className={`bg-white border border-gray-200 border-l-4 ${borderLeft} rounded-xl p-4 flex items-start gap-3 min-w-[300px] max-w-sm shadow-md animate-in slide-in-from-right-5 duration-200`}>
+            <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${iconColor}`} />
+            <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-gray-900 leading-tight">
                     {toast.title}
                 </p>
                 {toast.message && (
-                    <p style={{ margin: "3px 0 0", fontSize: "13px", color: "#94a3b8", lineHeight: 1.4 }}>
+                    <p className="text-xs text-gray-500 mt-1 leading-normal">
                         {toast.message}
                     </p>
                 )}
             </div>
-
-            {/* Close button */}
             <button
                 onClick={() => onRemove(toast.id)}
-                style={{
-                    background: "none",
-                    border: "none",
-                    color: "#475569",
-                    cursor: "pointer",
-                    fontSize: "16px",
-                    lineHeight: 1,
-                    padding: "2px 4px",
-                    borderRadius: "6px",
-                    flexShrink: 0,
-                    transition: "color 0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "#e2e8f0")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "#475569")}
+                className="text-gray-400 hover:text-gray-600 p-0.5 rounded transition-colors flex-shrink-0"
             >
-                ×
+                <X className="w-4 h-4" />
             </button>
         </div>
     );
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
 export function ToastProvider({ children }: { children: ReactNode }) {
     const [toasts, setToasts] = useState<Toast[]>([]);
     const timerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -158,32 +97,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             {children}
 
             {/* Toast Container */}
-            <div
-                style={{
-                    position: "fixed",
-                    bottom: "24px",
-                    right: "24px",
-                    zIndex: 9999,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "10px",
-                    alignItems: "flex-end",
-                    pointerEvents: "none",
-                }}
-            >
+            <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 items-end pointer-events-none">
                 {toasts.map((t) => (
-                    <div key={t.id} style={{ pointerEvents: "all" }}>
+                    <div key={t.id} className="pointer-events-auto">
                         <ToastItem toast={t} onRemove={remove} />
                     </div>
                 ))}
             </div>
-
-            <style>{`
-                @keyframes slideIn {
-                    from { opacity: 0; transform: translateX(40px) scale(0.9); }
-                    to   { opacity: 1; transform: translateX(0) scale(1); }
-                }
-            `}</style>
         </ToastContext.Provider>
     );
 }

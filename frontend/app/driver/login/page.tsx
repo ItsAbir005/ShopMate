@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useDriver } from "../../context/DriverContext";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Truck, AlertCircle } from "lucide-react";
 
 export default function DriverLoginPage() {
     const { login } = useDriver();
@@ -27,72 +29,64 @@ export default function DriverLoginPage() {
     };
 
     return (
-        <div style={{
-            minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-            background: "radial-gradient(ellipse at top, rgba(251,146,60,0.08) 0%, #0a0a0f 60%)",
-            padding: "24px",
-        }}>
-            <div style={{
-                width: "100%", maxWidth: "420px",
-                background: "linear-gradient(135deg, rgba(251,146,60,0.07) 0%, rgba(19,19,31,0.9) 100%)",
-                border: "1px solid rgba(251,146,60,0.2)",
-                borderRadius: "20px", padding: "40px", backdropFilter: "blur(20px)",
-            }}>
+        <div className="min-h-screen flex items-center justify-center bg-white px-4 py-12">
+            <div className="w-full max-w-md bg-white border border-gray-200 rounded-xl p-8 shadow-xs">
                 {/* Header */}
-                <div style={{ textAlign: "center", marginBottom: "32px" }}>
-                    <div style={{ fontSize: "48px", marginBottom: "12px" }}>🚚</div>
-                    <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>Driver Portal</h1>
-                    <p style={{ fontSize: "14px", color: "#94a3b8", margin: 0 }}>Sign in to your delivery account</p>
+                <div className="text-center mb-8">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto mb-3">
+                        <Truck className="w-6 h-6" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-1">Driver Portal</h1>
+                    <p className="text-xs text-gray-500">Sign in to your delivery account</p>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     <div>
-                        <label style={{ display: "block", fontSize: "13px", color: "#94a3b8", marginBottom: "6px" }}>Email</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Email address</label>
                         <input
-                            type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
                             autoComplete="username"
-                            style={{
-                                width: "100%", padding: "12px 14px", background: "rgba(0,0,0,0.4)",
-                                border: "1px solid rgba(251,146,60,0.2)", borderRadius: "10px",
-                                color: "#fff", fontSize: "14px", outline: "none", boxSizing: "border-box",
-                            }}
                             placeholder="driver@example.com"
+                            className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 placeholder:text-gray-400"
                         />
                     </div>
                     <div>
-                        <label style={{ display: "block", fontSize: "13px", color: "#94a3b8", marginBottom: "6px" }}>Password</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Password</label>
                         <input
-                            type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
                             autoComplete="current-password"
-                            style={{
-                                width: "100%", padding: "12px 14px", background: "rgba(0,0,0,0.4)",
-                                border: "1px solid rgba(251,146,60,0.2)", borderRadius: "10px",
-                                color: "#fff", fontSize: "14px", outline: "none", boxSizing: "border-box",
-                            }}
                             placeholder="••••••••"
+                            className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 placeholder:text-gray-400"
                         />
                     </div>
 
                     {error && (
-                        <div style={{ padding: "10px 14px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: "#f87171", fontSize: "13px" }}>
-                            {error}
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                            <span>{error}</span>
                         </div>
                     )}
 
-                    <button type="submit" disabled={loading} style={{
-                        padding: "13px", borderRadius: "10px", border: "none", cursor: "pointer",
-                        background: "linear-gradient(135deg, #f97316, #ea580c)",
-                        color: "#fff", fontSize: "15px", fontWeight: 700,
-                        opacity: loading ? 0.7 : 1, transition: "all 0.2s",
-                        marginTop: "4px",
-                    }}>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors cursor-pointer disabled:opacity-50 mt-1"
+                    >
                         {loading ? "Signing in..." : "Sign In"}
                     </button>
                 </form>
 
-                <p style={{ textAlign: "center", marginTop: "20px", fontSize: "13px", color: "#64748b" }}>
+                <p className="text-center mt-6 text-xs text-gray-500">
                     New driver?{" "}
-                    <a href="/driver/register" style={{ color: "#fb923c" }}>Register an account</a>
+                    <Link href="/driver/register" className="text-indigo-600 hover:text-indigo-700 font-medium">
+                        Register an account
+                    </Link>
                 </p>
             </div>
         </div>

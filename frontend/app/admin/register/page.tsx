@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Lock, Key } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -26,7 +27,6 @@ export default function AdminRegisterPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
             localStorage.setItem("adminToken", data.token);
-            // Also store as normal token so admin can access storefront seamlessly
             localStorage.setItem("token", data.token);
             localStorage.setItem("adminProfile", JSON.stringify(data.admin));
             router.push("/admin");
@@ -38,65 +38,73 @@ export default function AdminRegisterPage() {
     };
 
     return (
-        <div style={{
-            minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-            background: "radial-gradient(ellipse at top, rgba(99,102,241,0.1) 0%, #0a0a0f 60%)",
-            padding: "24px",
-        }}>
-            <div style={{
-                width: "100%", maxWidth: "440px",
-                background: "linear-gradient(135deg, rgba(99,102,241,0.07), rgba(19,19,31,0.95))",
-                border: "1px solid rgba(99,102,241,0.2)", borderRadius: "20px",
-                padding: "40px", backdropFilter: "blur(20px)",
-            }}>
-                <div style={{ textAlign: "center", marginBottom: "28px" }}>
-                    <div style={{ fontSize: "44px", marginBottom: "10px" }}>🔐</div>
-                    <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#fff", margin: "0 0 4px" }}>Create Admin Account</h1>
-                    <p style={{ fontSize: "13px", color: "#94a3b8", margin: 0 }}>Requires the admin secret key from your server</p>
+        <div className="min-h-screen flex items-center justify-center p-6 bg-white">
+            <div className="w-full max-w-md bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
+                <div className="text-center mb-8">
+                    <div className="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto mb-3">
+                        <Lock className="w-6 h-6" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-1">Create Admin Account</h1>
+                    <p className="text-xs text-gray-500">Requires the admin secret key from your server</p>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <form onSubmit={handleSubmit} className="space-y-4">
                     {[
                         { label: "Full Name", key: "name", type: "text", placeholder: "Admin Name" },
-                        { label: "Email", key: "email", type: "email", placeholder: "admin@aura.com" },
+                        { label: "Email", key: "email", type: "email", placeholder: "admin@shopmate.com" },
                         { label: "Password (min 8 chars)", key: "password", type: "password", placeholder: "StrongPass@123" },
                     ].map(({ label, key, type, placeholder }) => (
                         <div key={key}>
-                            <label style={{ display: "block", fontSize: "13px", color: "#94a3b8", marginBottom: "6px" }}>{label}</label>
-                            <input type={type} value={(form as any)[key]} onChange={e => set(key, e.target.value)} required placeholder={placeholder}
-                                style={{ width: "100%", padding: "12px 14px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "10px", color: "#fff", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
+                            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">{label}</label>
+                            <input
+                                type={type}
+                                value={(form as any)[key]}
+                                onChange={e => set(key, e.target.value)}
+                                required
+                                placeholder={placeholder}
+                                className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-indigo-600"
+                            />
                         </div>
                     ))}
 
-                    {/* Secret key field */}
-                    <div style={{ paddingTop: "4px" }}>
-                        <label style={{ display: "block", fontSize: "13px", marginBottom: "6px", color: "#818cf8" }}>🔑 Admin Secret Key</label>
-                        <input type="password" value={form.adminSecret} onChange={e => set("adminSecret", e.target.value)} required
+                    <div>
+                        <label className="flex items-center gap-1 text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-1">
+                            <Key className="w-3.5 h-3.5" />
+                            Admin Secret Key
+                        </label>
+                        <input
+                            type="password"
+                            value={form.adminSecret}
+                            onChange={e => set("adminSecret", e.target.value)}
+                            required
                             placeholder="From your ADMIN_SECRET_KEY env variable"
-                            style={{ width: "100%", padding: "12px 14px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.35)", borderRadius: "10px", color: "#fff", fontSize: "14px", outline: "none", boxSizing: "border-box" }} />
-                        <p style={{ fontSize: "11px", color: "#475569", marginTop: "5px" }}>
-                            Set in backend .env as <code style={{ color: "#818cf8" }}>ADMIN_SECRET_KEY</code>
+                            className="w-full px-3.5 py-2.5 bg-white border border-indigo-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-indigo-600"
+                        />
+                        <p className="text-[11px] text-gray-400 mt-1">
+                            Configured in backend env as <code className="text-indigo-600 font-mono">ADMIN_SECRET_KEY</code>
                         </p>
                     </div>
 
                     {error && (
-                        <div style={{ padding: "10px 14px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: "#f87171", fontSize: "13px" }}>
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-medium">
                             {error}
                         </div>
                     )}
 
-                    <button type="submit" disabled={loading} style={{
-                        padding: "13px", borderRadius: "10px", border: "none", cursor: "pointer",
-                        background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-                        color: "#fff", fontSize: "15px", fontWeight: 700,
-                        opacity: loading ? 0.7 : 1, marginTop: "4px",
-                    }}>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg transition-colors disabled:opacity-50 mt-2"
+                    >
                         {loading ? "Creating..." : "Create Admin Account"}
                     </button>
                 </form>
 
-                <p style={{ textAlign: "center", marginTop: "18px", fontSize: "13px", color: "#64748b" }}>
-                    Already have an account? <Link href="/admin/login" style={{ color: "#818cf8" }}>Sign in</Link>
+                <p className="text-center mt-6 text-xs text-gray-500">
+                    Already have an account?{" "}
+                    <Link href="/admin/login" className="text-indigo-600 hover:text-indigo-700 font-semibold">
+                        Sign in
+                    </Link>
                 </p>
             </div>
         </div>

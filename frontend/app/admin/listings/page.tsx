@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Clock, CheckCircle, XCircle, Tag, Check, X, Package, User, Folder } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -27,8 +28,6 @@ export default function AdminPendingListingsPage() {
     const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
     const [rejectModal, setRejectModal] = useState<{ id: string; title: string } | null>(null);
     const [rejectReason, setRejectReason] = useState("");
-    const [tab, setTab] = useState<"pending" | "all">("pending");
-    const [allListings, setAllListings] = useState<Listing[]>([]);
 
     const fetchPending = async () => {
         setLoading(true);
@@ -69,7 +68,7 @@ export default function AdminPendingListingsPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
             setListings(l => l.filter(x => x._id !== id));
-            showToast(`✅ "${title}" is now live in the store!`);
+            showToast(`"${title}" is now live in the store!`);
         } catch (err: any) {
             showToast(`Error: ${err.message}`, "error");
         } finally {
@@ -90,7 +89,7 @@ export default function AdminPendingListingsPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
             setListings(l => l.filter(x => x._id !== rejectModal.id));
-            showToast(`❌ "${rejectModal.title}" has been rejected.`);
+            showToast(`"${rejectModal.title}" has been rejected.`);
         } catch (err: any) {
             showToast(`Error: ${err.message}`, "error");
         } finally {
@@ -101,77 +100,48 @@ export default function AdminPendingListingsPage() {
     };
 
     return (
-        <div style={{ padding: "40px 32px", maxWidth: "1100px", margin: "0 auto" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white min-h-screen">
             {/* Toast */}
             {toast && (
-                <div style={{
-                    position: "fixed", bottom: "24px", right: "24px", zIndex: 999,
-                    background: toast.type === "error" ? "#ef4444" : "#10b981",
-                    color: "#fff", padding: "14px 22px", borderRadius: "12px",
-                    fontSize: "14px", fontWeight: 500, boxShadow: "0 8px 30px rgba(0,0,0,0.4)",
-                    animation: "fadeIn 0.2s ease",
-                }}>
+                <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-semibold shadow-lg ${
+                    toast.type === "error" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
+                }`}>
                     {toast.msg}
                 </div>
             )}
 
             {/* Reject Reason Modal */}
             {rejectModal && (
-                <div style={{
-                    position: "fixed", inset: 0, zIndex: 1000,
-                    background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)",
-                    display: "flex", alignItems: "center", justifyContent: "center", padding: "24px",
-                }}>
-                    <div style={{
-                        background: "linear-gradient(135deg, rgba(8,8,20,0.98), rgba(15,12,35,0.96))",
-                        border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px",
-                        padding: "36px", maxWidth: "480px", width: "100%",
-                        boxShadow: "0 24px 60px rgba(0,0,0,0.5)",
-                    }}>
-                        <h3 style={{ fontSize: "20px", fontWeight: 700, color: "#e2e8f0", marginBottom: "6px" }}>
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-md w-full shadow-xl">
+                        <h3 className="text-lg font-bold text-gray-900 mb-1">
                             Reject Listing
                         </h3>
-                        <p style={{ color: "#6b7280", fontSize: "13px", marginBottom: "20px" }}>
+                        <p className="text-xs text-gray-500 mb-4">
                             Provide a reason (optional) — the seller will see this message.
                         </p>
-                        <div style={{
-                            background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)",
-                            borderRadius: "10px", padding: "12px 16px", marginBottom: "18px",
-                            fontSize: "14px", color: "#f87171",
-                        }}>
-                            📋 "{rejectModal.title}"
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-xs font-medium text-red-700">
+                            "{rejectModal.title}"
                         </div>
                         <textarea
                             value={rejectReason}
                             onChange={e => setRejectReason(e.target.value)}
-                            placeholder="e.g. Images are too blurry, price is not within acceptable range…"
+                            placeholder="e.g. Images are blurry, price is out of range…"
                             rows={3}
-                            style={{
-                                width: "100%", background: "rgba(0,0,0,0.3)",
-                                border: "1px solid rgba(255,255,255,0.08)", borderRadius: "10px",
-                                padding: "10px 14px", color: "#e2e8f0", fontSize: "14px",
-                                outline: "none", resize: "vertical", boxSizing: "border-box", marginBottom: "20px",
-                            }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-indigo-600 mb-4"
                         />
-                        <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                        <div className="flex justify-end gap-2">
                             <button
                                 onClick={() => { setRejectModal(null); setRejectReason(""); }}
-                                style={{
-                                    padding: "10px 20px", borderRadius: "10px",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                    background: "rgba(255,255,255,0.04)",
-                                    color: "#94a3b8", cursor: "pointer", fontWeight: 600,
-                                }}>
+                                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 text-sm font-semibold hover:bg-gray-50"
+                            >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleReject}
                                 disabled={!!actionId}
-                                style={{
-                                    padding: "10px 24px", borderRadius: "10px", border: "none",
-                                    background: "#ef4444", color: "#fff", fontWeight: 700,
-                                    cursor: "pointer", opacity: actionId ? 0.5 : 1,
-                                }}>
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                            >
                                 {actionId ? "Rejecting…" : "Reject Listing"}
                             </button>
                         </div>
@@ -180,165 +150,114 @@ export default function AdminPendingListingsPage() {
             )}
 
             {/* Header */}
-            <div style={{ marginBottom: "36px" }}>
-                <h1 style={{
-                    fontSize: "32px", fontWeight: 800, marginBottom: "6px",
-                    background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                }}>
-                    Pending Listings
-                </h1>
-                <p style={{ color: "#6b7280", fontSize: "14px" }}>
+            <div className="mb-8">
+                <div className="flex items-center gap-2">
+                    <Tag className="w-7 h-7 text-indigo-600" />
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Pending Listings</h1>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
                     Review customer-submitted sell listings before they go live.
                 </p>
             </div>
 
             {/* Stats bar */}
-            <div style={{
-                display: "flex", gap: "16px", marginBottom: "32px", flexWrap: "wrap",
-            }}>
-                {[
-                    { label: "Awaiting Review", value: listings.length, color: "#fbbf24", icon: "🕐" },
-                ].map(s => (
-                    <div key={s.label} style={{
-                        background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
-                        borderRadius: "12px", padding: "16px 24px", display: "flex", alignItems: "center", gap: "12px",
-                    }}>
-                        <span style={{ fontSize: "24px" }}>{s.icon}</span>
-                        <div>
-                            <div style={{ fontSize: "24px", fontWeight: 700, color: s.color }}>{s.value}</div>
-                            <div style={{ fontSize: "12px", color: "#6b7280" }}>{s.label}</div>
-                        </div>
+            <div className="mb-6">
+                <div className="inline-flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-5 py-3">
+                    <Clock className="w-5 h-5 text-amber-500" />
+                    <div>
+                        <div className="text-xl font-bold text-gray-900">{listings.length}</div>
+                        <div className="text-xs text-gray-500 font-medium">Awaiting Review</div>
                     </div>
-                ))}
+                </div>
             </div>
 
             {/* Listings */}
             {loading ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div className="space-y-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i} style={{
-                            height: "140px", borderRadius: "16px",
-                            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
-                        }} />
+                        <div key={i} className="h-32 rounded-xl bg-gray-50 border border-gray-200 animate-pulse" />
                     ))}
                 </div>
             ) : listings.length === 0 ? (
-                <div style={{
-                    background: "rgba(16,185,129,0.05)", border: "1px solid rgba(16,185,129,0.2)",
-                    borderRadius: "20px", padding: "60px 24px", textAlign: "center",
-                }}>
-                    <div style={{ fontSize: "56px", marginBottom: "16px" }}>🎉</div>
-                    <h3 style={{ fontSize: "22px", fontWeight: 700, color: "#10b981", marginBottom: "6px" }}>All Clear!</h3>
-                    <p style={{ color: "#6b7280" }}>No pending listings to review right now.</p>
+                <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center max-w-lg mx-auto">
+                    <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">All Clear!</h3>
+                    <p className="text-sm text-gray-500">No pending listings to review right now.</p>
                 </div>
             ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div className="space-y-4">
                     {listings.map(listing => {
                         const seller = listing.seller_id;
                         const catName = typeof listing.category_id === "object"
                             ? listing.category_id?.name : "";
 
                         return (
-                            <div key={listing._id} style={{
-                                background: "rgba(255,255,255,0.02)", border: "1px solid rgba(251,191,36,0.15)",
-                                borderRadius: "18px", padding: "22px 24px",
-                                display: "flex", gap: "20px", alignItems: "flex-start",
-                            }}>
-                                {/* Images carousel */}
-                                <div style={{
-                                    display: "flex", gap: "8px", flexShrink: 0,
-                                }}>
+                            <div key={listing._id} className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col sm:flex-row gap-5 items-start">
+                                {/* Images */}
+                                <div className="flex gap-2 flex-shrink-0">
                                     {listing.images.slice(0, 3).map((img, i) => (
-                                        <div key={i} style={{
-                                            width: "80px", height: "80px", borderRadius: "10px",
-                                            overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)",
-                                            background: "rgba(0,0,0,0.3)", flexShrink: 0,
-                                        }}>
-                                            <img src={img} alt=""
-                                                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                        <div key={i} className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
+                                            <img src={img} alt="" className="w-full h-full object-cover" />
                                         </div>
                                     ))}
                                     {listing.images.length === 0 && (
-                                        <div style={{
-                                            width: "80px", height: "80px", borderRadius: "10px",
-                                            border: "1px solid rgba(255,255,255,0.07)", background: "rgba(0,0,0,0.2)",
-                                            display: "flex", alignItems: "center", justifyContent: "center",
-                                            fontSize: "28px", opacity: 0.3,
-                                        }}>📦</div>
+                                        <div className="w-20 h-20 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center text-gray-400">
+                                            <Package className="w-8 h-8" />
+                                        </div>
                                     )}
                                 </div>
 
                                 {/* Info */}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "4px" }}>
-                                        <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#e2e8f0" }}>{listing.title}</h3>
-                                        <span style={{
-                                            padding: "2px 10px", borderRadius: "6px", fontSize: "11px",
-                                            fontWeight: 700, background: "rgba(251,191,36,0.1)",
-                                            border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24",
-                                        }}>🕐 Pending</span>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                        <h3 className="font-bold text-gray-900 text-base">{listing.title}</h3>
+                                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                            Pending
+                                        </span>
                                     </div>
 
-                                    <p style={{ color: "#6b7280", fontSize: "13px", marginBottom: "10px", maxWidth: "500px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    <p className="text-sm text-gray-500 mb-3 truncate max-w-xl">
                                         {listing.description}
                                     </p>
 
-                                    <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "13px" }}>
-                                        <span style={{ color: "#10b981", fontWeight: 700 }}>${listing.price.toFixed(2)}</span>
-                                        <span style={{ color: "#6b7280" }}>Stock: {listing.stock}</span>
-                                        {listing.discount > 0 && <span style={{ color: "#f59e0b" }}>-{listing.discount}%</span>}
-                                        {catName && <span style={{ color: "#6b7280" }}>📂 {catName}</span>}
-                                        {listing.images.length > 0 && <span style={{ color: "#6b7280" }}>🖼 {listing.images.length} image{listing.images.length !== 1 ? "s" : ""}</span>}
+                                    <div className="flex gap-4 flex-wrap text-xs text-gray-600">
+                                        <span className="font-bold text-emerald-600 text-sm">${listing.price.toFixed(2)}</span>
+                                        <span>Stock: {listing.stock}</span>
+                                        {listing.discount > 0 && <span className="text-amber-600 font-semibold">-{listing.discount}%</span>}
+                                        {catName && <span className="flex items-center gap-1"><Folder className="w-3 h-3" /> {catName}</span>}
                                     </div>
 
-                                    {/* Seller info */}
                                     {seller && (
-                                        <div style={{
-                                            marginTop: "10px", display: "inline-flex", alignItems: "center", gap: "8px",
-                                            background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.15)",
-                                            borderRadius: "8px", padding: "5px 12px", fontSize: "12px",
-                                        }}>
-                                            <span style={{ color: "#818cf8" }}>👤 {seller.name}</span>
-                                            <span style={{ color: "#4b5563" }}>·</span>
-                                            <span style={{ color: "#6b7280" }}>{seller.email}</span>
+                                        <div className="mt-3 inline-flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 text-xs text-gray-600">
+                                            <User className="w-3.5 h-3.5 text-indigo-600" />
+                                            <span className="font-medium text-gray-900">{seller.name}</span>
+                                            <span>·</span>
+                                            <span>{seller.email}</span>
                                         </div>
                                     )}
 
-                                    <div style={{ marginTop: "8px", fontSize: "11px", color: "#4b5563" }}>
+                                    <div className="mt-2 text-[11px] text-gray-400">
                                         Submitted {new Date(listing.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                                     </div>
                                 </div>
 
                                 {/* Action buttons */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
+                                <div className="flex sm:flex-col gap-2 flex-shrink-0 w-full sm:w-auto">
                                     <button
                                         onClick={() => handleApprove(listing._id, listing.title)}
                                         disabled={!!actionId}
-                                        style={{
-                                            padding: "9px 20px", borderRadius: "9px", border: "none",
-                                            background: "linear-gradient(135deg, #10b981, #059669)",
-                                            color: "#fff", fontWeight: 700, fontSize: "13px",
-                                            cursor: actionId ? "wait" : "pointer",
-                                            opacity: actionId === listing._id ? 0.6 : 1,
-                                            boxShadow: "0 4px 12px rgba(16,185,129,0.3)",
-                                            transition: "all 0.15s",
-                                        }}>
-                                        {actionId === listing._id ? "…" : "✅ Approve"}
+                                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors disabled:opacity-50"
+                                    >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>Approve</span>
                                     </button>
                                     <button
                                         onClick={() => { setRejectModal({ id: listing._id, title: listing.title }); setRejectReason(""); }}
                                         disabled={!!actionId}
-                                        style={{
-                                            padding: "9px 20px", borderRadius: "9px",
-                                            border: "1px solid rgba(239,68,68,0.3)",
-                                            background: "rgba(239,68,68,0.08)",
-                                            color: "#f87171", fontWeight: 700, fontSize: "13px",
-                                            cursor: actionId ? "wait" : "pointer",
-                                            opacity: actionId ? 0.6 : 1,
-                                            transition: "all 0.15s",
-                                        }}>
-                                        ❌ Reject
+                                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 font-semibold text-xs transition-colors disabled:opacity-50"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                        <span>Reject</span>
                                     </button>
                                 </div>
                             </div>

@@ -78,7 +78,6 @@ export default function MapTrackerInner({ orderId, deliveryAddress, initialDrive
         socket.emit("track:order", { orderId });
 
         socket.on("driver:location", (data: { lat: number; lng: number }) => {
-            console.log("Live location update:", data);
             setDriverLocation({ lat: data.lat, lng: data.lng });
         });
 

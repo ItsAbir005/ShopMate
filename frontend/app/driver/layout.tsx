@@ -4,6 +4,7 @@ import { DriverProvider, useDriver } from "../context/DriverContext";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { LayoutDashboard, History, Truck, LogOut, CheckCircle2, Circle } from "lucide-react";
 
 function DriverNav() {
     const { driver, logout, setOnlineStatus } = useDriver();
@@ -19,7 +20,6 @@ function DriverNav() {
             if (isOnline) {
                 await setOnlineStatus("offline");
             } else {
-                // Request geolocation when going online
                 if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                         async (pos) => {
@@ -27,7 +27,6 @@ function DriverNav() {
                             setToggling(false);
                         },
                         async () => {
-                            // Fallback with default location if permission denied
                             await setOnlineStatus("online", 22.5726, 88.3639);
                             setToggling(false);
                         }
@@ -44,64 +43,66 @@ function DriverNav() {
     const handleLogout = () => { logout(); router.push("/driver/login"); };
 
     const navLinks = [
-        { href: "/driver/dashboard", label: "Dashboard", icon: "📊" },
-        { href: "/driver/history", label: "History", icon: "📋" },
+        { href: "/driver/dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/driver/history", label: "History", icon: History },
     ];
 
     return (
-        <nav style={{
-            position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-            background: "linear-gradient(135deg, rgba(15,10,5,0.97) 0%, rgba(25,15,5,0.95) 100%)",
-            borderBottom: "1px solid rgba(251,146,60,0.2)",
-            backdropFilter: "blur(20px)",
-        }}>
-            <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 24px", height: "68px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
                 {/* Logo */}
-                <Link href="/driver/dashboard" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
-                    <span style={{ fontSize: "22px" }}>🚚</span>
-                    <span style={{ fontSize: "18px", fontWeight: 700, background: "linear-gradient(135deg, #fb923c, #f97316)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                        Aura Driver
-                    </span>
+                <Link href="/driver/dashboard" className="flex items-center gap-2 text-gray-900 font-bold text-base">
+                    <Truck className="w-5 h-5 text-indigo-600" />
+                    <span>ShopMate Driver</span>
                 </Link>
 
                 {/* Nav links */}
-                <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
-                    {navLinks.map(({ href, label, icon }) => (
-                        <Link key={href} href={href} style={{
-                            textDecoration: "none", fontSize: "14px",
-                            color: pathname === href ? "#fb923c" : "#94a3b8",
-                            fontWeight: pathname === href ? 600 : 400,
-                            transition: "color 0.2s",
-                        }}>
-                            {icon} {label}
-                        </Link>
-                    ))}
+                <div className="flex gap-4 sm:gap-6 items-center">
+                    {navLinks.map(({ href, label, icon: Icon }) => {
+                        const active = pathname === href;
+                        return (
+                            <Link
+                                key={href}
+                                href={href}
+                                className={`text-xs sm:text-sm font-medium flex items-center gap-1.5 transition-colors ${
+                                    active ? "text-indigo-600" : "text-gray-600 hover:text-gray-900"
+                                }`}
+                            >
+                                <Icon className="w-4 h-4" />
+                                <span>{label}</span>
+                            </Link>
+                        );
+                    })}
                 </div>
 
                 {/* Online toggle + logout */}
-                <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                    <button onClick={handleToggle} disabled={toggling || driver?.status === "busy"} style={{
-                        padding: "8px 18px", borderRadius: "999px", cursor: "pointer",
-                        fontWeight: 600, fontSize: "13px", transition: "all 0.25s",
-                        background: isOnline
-                            ? "linear-gradient(135deg, #22c55e, #16a34a)"
-                            : "rgba(255,255,255,0.05)",
-                        color: isOnline ? "#fff" : "#94a3b8",
-                        border: isOnline ? "none" : "1px solid rgba(255,255,255,0.1)",
-                        opacity: toggling ? 0.6 : 1,
-                    }}>
-                        {toggling ? "..." : isOnline ? "🟢 Online" : "⚫ Go Online"}
+                <div className="flex gap-3 items-center">
+                    <button
+                        onClick={handleToggle}
+                        disabled={toggling || driver?.status === "busy"}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 ${
+                            isOnline
+                                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
+                        }`}
+                    >
+                        {isOnline ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+                        <span>{toggling ? "..." : isOnline ? "Online" : "Go Online"}</span>
                     </button>
+
                     {driver && (
-                        <span style={{ fontSize: "14px", color: "#fb923c", fontWeight: 600 }}>
+                        <span className="hidden sm:inline text-xs font-semibold text-gray-900">
                             {driver.name.split(" ")[0]}
                         </span>
                     )}
-                    <button onClick={handleLogout} style={{
-                        padding: "7px 14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)",
-                        background: "rgba(255,255,255,0.05)", color: "#94a3b8", fontSize: "13px", cursor: "pointer",
-                    }}>
-                        Logout
+
+                    <button
+                        onClick={handleLogout}
+                        className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Logout"
+                    >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Logout</span>
                     </button>
                 </div>
             </div>
@@ -125,29 +126,26 @@ function DriverLayoutInner({ children }: { children: React.ReactNode }) {
         return <>{children}</>;
     }
 
-    // Don't render protected pages until context finishes reading localStorage
-    // This prevents a flash of blank/broken content with driver=null
     if (loading) {
         return (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#0a0a0f" }}>
-                <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "32px", marginBottom: "12px" }}>🚚</div>
-                    <p style={{ color: "#64748b", fontSize: "14px" }}>Loading...</p>
+            <div className="min-h-screen flex items-center justify-center bg-white">
+                <div className="text-center">
+                    <Truck className="w-8 h-8 text-indigo-600 mx-auto mb-2 animate-bounce" />
+                    <p className="text-xs text-gray-500">Loading driver portal…</p>
                 </div>
             </div>
         );
     }
 
-    // If not loading and no driver, redirect effect will handle it — show nothing
     if (!driver) return null;
 
     return (
-        <>
+        <div className="bg-white min-h-screen text-gray-900">
             <DriverNav />
-            <main style={{ paddingTop: "68px", minHeight: "100vh", background: "radial-gradient(ellipse at top, rgba(251,146,60,0.04) 0%, #0a0a0f 60%)" }}>
+            <main className="pt-16 min-h-screen bg-white">
                 {children}
             </main>
-        </>
+        </div>
     );
 }
 

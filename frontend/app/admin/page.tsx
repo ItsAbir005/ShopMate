@@ -2,6 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+    DollarSign,
+    ClipboardList,
+    Package,
+    Users,
+    Truck,
+    Clock,
+    Activity,
+    ArrowRight,
+    Lock,
+    Store,
+    ShieldCheck
+} from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -15,54 +28,47 @@ interface Stats {
     pendingShipments: number;
 }
 
-const StatCard = ({ icon, label, value, sub, color }: {
-    icon: string; label: string; value: string | number; sub?: string; color: string;
+const StatCard = ({ icon: Icon, label, value, sub, color }: {
+    icon: any; label: string; value: string | number; sub?: string; color?: string;
 }) => (
-    <div style={{
-        background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
-        borderRadius: "16px", padding: "22px", display: "flex", flexDirection: "column", gap: "8px",
-    }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-            <span style={{ fontSize: "20px" }}>{icon}</span>
+    <div className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">{label}</span>
+            <div className="p-2 rounded-lg bg-gray-50 border border-gray-100 text-gray-700">
+                <Icon className="w-4 h-4" />
+            </div>
         </div>
-        <p style={{ fontSize: "28px", fontWeight: 700, color, margin: 0, lineHeight: 1 }}>{value}</p>
-        {sub && <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>{sub}</p>}
+        <p className="text-2xl font-bold text-gray-900 leading-none">{value}</p>
+        {sub && <p className="text-xs text-gray-500">{sub}</p>}
     </div>
 );
 
-const QuickLink = ({ href, icon, label, desc, target }: { href: string; icon: string; label: string; desc: string; target?: string; }) => {
+const QuickLink = ({ href, icon: Icon, label, desc, target }: { href: string; icon: any; label: string; desc: string; target?: string; }) => {
     const isExternal = target === "_blank";
-    const commonStyle = {
-        display: "flex", alignItems: "center", gap: "16px", padding: "18px 20px",
-        background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
-        borderRadius: "14px", textDecoration: "none", transition: "all 0.2s",
-    };
+    const commonClass = "flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl text-gray-900 hover:border-indigo-400 hover:bg-gray-50/50 transition-colors group";
     const content = (
         <>
-            <span style={{ fontSize: "28px" }}>{icon}</span>
-            <div>
-                <p style={{ margin: 0, fontWeight: 600, color: "#e2e8f0", fontSize: "15px" }}>{label}</p>
-                <p style={{ margin: "2px 0 0", fontSize: "13px", color: "#64748b" }}>{desc}</p>
+            <div className="p-2.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                <Icon className="w-5 h-5" />
             </div>
-            <span style={{ marginLeft: "auto", color: "#64748b", fontSize: "18px" }}>→</span>
+            <div className="flex-1">
+                <p className="font-semibold text-gray-900 text-sm">{label}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
         </>
     );
 
     if (isExternal) {
         return (
-            <a href={href} target={target} rel="noopener noreferrer" style={commonStyle}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)")}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)")}>
+            <a href={href} target={target} rel="noopener noreferrer" className={commonClass}>
                 {content}
             </a>
         );
     }
 
     return (
-        <Link href={href} style={commonStyle}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.3)")}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)")}>
+        <Link href={href} className={commonClass}>
             {content}
         </Link>
     );
@@ -82,7 +88,6 @@ export default function AdminDashboard() {
         const load = async () => {
             const token = localStorage.getItem("adminToken");
             try {
-                // Fetch stats in parallel
                 const [ordersRes, productsRes, usersRes, driversRes] = await Promise.allSettled([
                     fetch(`${API}/orders?limit=1000`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
                     fetch(`${API}/products?limit=1`).then(r => r.json()),
@@ -118,47 +123,50 @@ export default function AdminDashboard() {
     }, []);
 
     return (
-        <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px 24px" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white min-h-screen">
             {/* Header */}
-            <div style={{ marginBottom: "32px" }}>
-                <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>
-                    Welcome back, {adminName.split(" ")[0]} 🛡️
-                </h1>
-                <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>
+            <div className="mb-8">
+                <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-7 h-7 text-indigo-600" />
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                        Welcome back, {adminName.split(" ")[0]}
+                    </h1>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">
                     Here's what's happening with your store today.
                 </p>
             </div>
 
             {/* Stats Grid */}
             {loading ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "32px" }}>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[1, 2, 3, 4].map(i => (
-                        <div key={i} style={{ height: "110px", background: "rgba(255,255,255,0.02)", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }} />
+                        <div key={i} className="h-28 bg-gray-50 border border-gray-200 rounded-xl animate-pulse" />
                     ))}
                 </div>
             ) : stats && (
                 <>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "16px" }}>
-                        <StatCard icon="💰" label="Total Revenue" value={`₹${stats.totalRevenue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} sub="From paid orders" color="#22c55e" />
-                        <StatCard icon="📋" label="Total Orders" value={stats.totalOrders} sub={`${stats.pendingOrders} pending`} color="#818cf8" />
-                        <StatCard icon="📦" label="Products" value={stats.totalProducts} color="#fb923c" />
-                        <StatCard icon="👥" label="Users" value={stats.totalUsers} color="#38bdf8" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <StatCard icon={DollarSign} label="Total Revenue" value={`$${stats.totalRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`} sub="From paid orders" />
+                        <StatCard icon={ClipboardList} label="Total Orders" value={stats.totalOrders} sub={`${stats.pendingOrders} pending`} />
+                        <StatCard icon={Package} label="Products" value={stats.totalProducts} />
+                        <StatCard icon={Users} label="Users" value={stats.totalUsers} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "32px" }}>
-                        <StatCard icon="🚚" label="Online Drivers" value={stats.activeDrivers} sub="Currently active" color="#22c55e" />
-                        <StatCard icon="⏳" label="Pending Orders" value={stats.pendingOrders} sub="Need attention" color="#facc15" />
-                        <StatCard icon="🔄" label="System" value="Healthy" sub="All services running" color="#34d399" />
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        <StatCard icon={Truck} label="Online Drivers" value={stats.activeDrivers} sub="Currently active" />
+                        <StatCard icon={Clock} label="Pending Orders" value={stats.pendingOrders} sub="Need attention" />
+                        <StatCard icon={Activity} label="System Status" value="Healthy" sub="All services running" />
                     </div>
                 </>
             )}
 
             {/* Quick Links */}
-            <h2 style={{ fontSize: "18px", fontWeight: 600, color: "#e2e8f0", marginBottom: "16px" }}>Quick Actions</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
-                <QuickLink href="/admin/products" icon="📦" label="Manage Products" desc="Add, edit or delete products" />
-                <QuickLink href="/admin/drivers" icon="🚚" label="Manage Drivers" desc="View and block driver accounts" />
-                <QuickLink href="/admin/register" icon="🔐" label="Create Admin Account" desc="Add another admin with secret key" />
-                <QuickLink href="/" icon="🛍️" label="View Store" desc="See customer-facing storefront" target="_blank" />
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <QuickLink href="/admin/products" icon={Package} label="Manage Products" desc="Add, edit or delete products" />
+                <QuickLink href="/admin/drivers" icon={Truck} label="Manage Drivers" desc="View and block driver accounts" />
+                <QuickLink href="/admin/register" icon={Lock} label="Create Admin Account" desc="Add another admin with secret key" />
+                <QuickLink href="/" icon={Store} label="View Store" desc="See customer-facing storefront" target="_blank" />
             </div>
         </div>
     );

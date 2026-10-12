@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Truck, Search } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -17,10 +18,10 @@ interface Driver {
     createdAt: string;
 }
 
-const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
-    online: { bg: "rgba(34,197,94,0.12)", text: "#22c55e" },
-    busy: { bg: "rgba(251,146,60,0.12)", text: "#fb923c" },
-    offline: { bg: "rgba(100,116,139,0.12)", text: "#64748b" },
+const STATUS_COLOR: Record<string, { bg: string; text: string; border: string }> = {
+    online: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+    busy: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+    offline: { bg: "bg-gray-50", text: "text-gray-600", border: "border-gray-200" },
 };
 
 export default function AdminDriversPage() {
@@ -69,111 +70,105 @@ export default function AdminDriversPage() {
     const blocked = drivers.filter(d => d.isBlocked).length;
 
     return (
-        <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px 24px" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-white min-h-screen">
             {/* Header */}
-            <div style={{ marginBottom: "28px" }}>
-                <h1 style={{ fontSize: "26px", fontWeight: 700, color: "#fff", margin: "0 0 4px" }}>Driver Management</h1>
-                <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>{drivers.length} registered drivers</p>
+            <div className="mb-8">
+                <div className="flex items-center gap-2">
+                    <Truck className="w-7 h-7 text-indigo-600" />
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Driver Management</h1>
+                </div>
+                <p className="text-sm text-gray-600 mt-1">{drivers.length} registered drivers</p>
             </div>
 
             {/* Stat strip */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 {[
-                    { label: "Total", value: drivers.length, color: "#818cf8" },
-                    { label: "Online", value: online, color: "#22c55e" },
-                    { label: "Busy", value: busy, color: "#fb923c" },
-                    { label: "Blocked", value: blocked, color: "#f87171" },
-                ].map(({ label, value, color }) => (
-                    <div key={label} style={{
-                        background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
-                        borderRadius: "12px", padding: "16px", textAlign: "center",
-                    }}>
-                        <p style={{ margin: "0 0 4px", fontSize: "24px", fontWeight: 700, color }}>{value}</p>
-                        <p style={{ margin: 0, fontSize: "12px", color: "#64748b", textTransform: "uppercase" }}>{label}</p>
+                    { label: "Total", value: drivers.length },
+                    { label: "Online", value: online, textCol: "text-emerald-600" },
+                    { label: "Busy", value: busy, textCol: "text-amber-600" },
+                    { label: "Blocked", value: blocked, textCol: "text-red-600" },
+                ].map(({ label, value, textCol }) => (
+                    <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 text-center">
+                        <p className={`text-2xl font-bold ${textCol || "text-gray-900"} mb-1`}>{value}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">{label}</p>
                     </div>
                 ))}
             </div>
 
             {/* Search */}
-            <div style={{ marginBottom: "16px" }}>
+            <div className="mb-6 relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                     value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="🔍  Search driver, email or vehicle number..."
-                    style={{
-                        width: "100%", padding: "11px 16px", background: "rgba(0,0,0,0.3)",
-                        border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px",
-                        color: "#fff", fontSize: "14px", outline: "none", boxSizing: "border-box",
-                    }}
+                    placeholder="Search driver by name, email or vehicle number..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:border-indigo-600"
                 />
             </div>
 
             {/* Table */}
             {loading ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {[1, 2, 3].map(i => <div key={i} style={{ height: "60px", background: "rgba(255,255,255,0.02)", borderRadius: "10px" }} />)}
+                <div className="space-y-3">
+                    {[1, 2, 3].map(i => <div key={i} className="h-16 bg-gray-50 border border-gray-200 rounded-xl animate-pulse" />)}
                 </div>
             ) : (
-                <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", overflow: "hidden" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+                            <tr className="border-b border-gray-200 bg-gray-50">
                                 {["Driver", "Vehicle", "Status", "Joined", "Actions"].map(h => (
-                                    <th key={h} style={{ padding: "13px 16px", textAlign: "left", fontSize: "12px", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                                    <th key={h} className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.length === 0 && (
                                 <tr>
-                                    <td colSpan={5} style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>No drivers found</td>
+                                    <td colSpan={5} className="p-8 text-center text-gray-500 text-sm">No drivers found</td>
                                 </tr>
                             )}
                             {filtered.map(driver => {
                                 const sc = STATUS_COLOR[driver.status] || STATUS_COLOR.offline;
                                 return (
-                                    <tr key={driver._id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                                    <tr key={driver._id} className="border-b border-gray-100 last:border-none hover:bg-gray-50/50 transition-colors">
                                         {/* Driver info */}
-                                        <td style={{ padding: "14px 16px" }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                                                <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#4f46e5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", flexShrink: 0 }}>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 font-bold text-xs flex items-center justify-center flex-shrink-0">
                                                     {driver.name[0].toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p style={{ margin: 0, fontWeight: 600, color: driver.isBlocked ? "#64748b" : "#e2e8f0", fontSize: "14px" }}>
-                                                        {driver.name} {driver.isBlocked && <span style={{ fontSize: "11px", color: "#f87171" }}>(Blocked)</span>}
+                                                    <p className={`font-semibold text-sm ${driver.isBlocked ? "text-gray-400 line-through" : "text-gray-900"}`}>
+                                                        {driver.name} {driver.isBlocked && <span className="text-xs text-red-600 no-underline font-normal">(Blocked)</span>}
                                                     </p>
-                                                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>{driver.email}</p>
+                                                    <p className="text-xs text-gray-500">{driver.email}</p>
                                                 </div>
                                             </div>
                                         </td>
                                         {/* Vehicle */}
-                                        <td style={{ padding: "14px 16px" }}>
-                                            <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>
-                                                {driver.vehicleType} · <span style={{ fontFamily: "monospace", color: "#e2e8f0" }}>{driver.vehicleNumber}</span>
-                                            </p>
-                                            <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>{driver.phone}</p>
+                                        <td className="p-4 text-xs text-gray-600">
+                                            <p className="font-medium text-gray-900">{driver.vehicleType} · <span className="font-mono text-gray-600">{driver.vehicleNumber}</span></p>
+                                            <p className="text-gray-500">{driver.phone}</p>
                                         </td>
                                         {/* Status */}
-                                        <td style={{ padding: "14px 16px" }}>
-                                            <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 600, background: sc.bg, color: sc.text }}>
+                                        <td className="p-4">
+                                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${sc.bg} ${sc.text} ${sc.border}`}>
                                                 {driver.status.toUpperCase()}
                                             </span>
                                         </td>
                                         {/* Joined */}
-                                        <td style={{ padding: "14px 16px", fontSize: "13px", color: "#64748b" }}>
-                                            {new Date(driver.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                        <td className="p-4 text-xs text-gray-500">
+                                            {new Date(driver.createdAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
                                         </td>
                                         {/* Actions */}
-                                        <td style={{ padding: "14px 16px" }}>
+                                        <td className="p-4">
                                             <button
                                                 onClick={() => toggleBlock(driver._id, driver.isBlocked)}
                                                 disabled={toggling === driver._id}
-                                                style={{
-                                                    padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 600,
-                                                    background: driver.isBlocked ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
-                                                    color: driver.isBlocked ? "#22c55e" : "#f87171",
-                                                    opacity: toggling === driver._id ? 0.6 : 1,
-                                                }}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                                                    driver.isBlocked
+                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                                        : "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                                                } disabled:opacity-50`}
                                             >
                                                 {toggling === driver._id ? "..." : driver.isBlocked ? "Unblock" : "Block"}
                                             </button>

@@ -3,6 +3,7 @@
 import { useAuth } from "./context/AuthContext";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Sparkles, Zap, ShieldCheck, ArrowRight } from "lucide-react";
 
 export default function HomePage() {
     const { user } = useAuth();
@@ -13,38 +14,53 @@ export default function HomePage() {
     }, []);
 
     return (
-        <div className="container-custom mt-16 flex flex-col items-center text-center min-h-[80vh] relative">
-            <div className="relative z-10">
+        <div className="container-custom py-16 sm:py-24 flex flex-col items-center text-center">
+            <div className="max-w-3xl mx-auto">
                 {mounted && user ? (
                     <>
-                        <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6 tracking-tight">
-                            Welcome back, <br /> <span className="gradient-text">{user.name}</span>!
+                        <h1 className="text-4xl sm:text-6xl font-bold tracking-tight text-gray-900 leading-tight mb-6">
+                            Welcome back, <span className="text-indigo-600">{user.name}</span>
                         </h1>
-                        <p className="text-muted text-lg md:text-xl max-w-2xl mx-auto mb-12 leading-relaxed">
-                            Ready to continue your unparalleled shopping journey? Discover what's new today.
+                        <p className="text-gray-600 text-lg sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+                            Ready to continue shopping? Browse our newest arrivals and exclusive categories today.
                         </p>
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <Link href="/products" className="btn btn-primary px-8 py-4 text-lg">
-                                Continue Shopping
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                            <Link
+                                href="/products"
+                                className="btn btn-primary px-6 py-3 text-base flex items-center justify-center gap-2"
+                            >
+                                <span>Continue Shopping</span>
+                                <ArrowRight className="w-4 h-4" />
                             </Link>
-                            <Link href="/profile" className="btn bg-white/5 border border-card-border px-8 py-4 text-lg">
+                            <Link
+                                href="/profile"
+                                className="btn bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-6 py-3 text-base"
+                            >
                                 View Profile
                             </Link>
                         </div>
                     </>
                 ) : (
                     <>
-                        <h1 className="text-5xl md:text-7xl font-bold leading-tight mb-6 tracking-tight">
-                            Next-Generation <br /> <span className="gradient-text">Shopping Experience</span>
+                        <h1 className="text-4xl sm:text-6xl font-bold tracking-tight text-gray-900 leading-tight mb-6">
+                            Modern Shopping <br className="hidden sm:inline" />
+                            <span className="text-gray-900">Made Effortless</span>
                         </h1>
-                        <p className="text-muted text-lg md:text-xl max-w-2xl mx-auto mb-12 leading-relaxed">
-                            Discover curated products with an unparalleled design. Elevate your lifestyle with our premium collections.
+                        <p className="text-gray-600 text-lg sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+                            Discover curated quality products, transparent pricing, and instant real-time order tracking with ShopMate.
                         </p>
-                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                            <Link href="/products" className="btn btn-primary px-8 py-4 text-lg">
-                                Explore Collection
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                            <Link
+                                href="/products"
+                                className="btn btn-primary px-6 py-3 text-base flex items-center justify-center gap-2"
+                            >
+                                <span>Explore Products</span>
+                                <ArrowRight className="w-4 h-4" />
                             </Link>
-                            <Link href="/register" className="btn bg-white/5 border border-card-border px-8 py-4 text-lg">
+                            <Link
+                                href="/register"
+                                className="btn bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-6 py-3 text-base"
+                            >
                                 Create Account
                             </Link>
                         </div>
@@ -52,30 +68,27 @@ export default function HomePage() {
                 )}
             </div>
 
-            {/* Decorative Blob */}
-            <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.15)_0%,rgba(0,0,0,0)_70%)] blur-[60px] z-0 pointer-events-none" />
-
-            <div className="mt-24 w-full grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
-                <div className="card">
-                    <div className="h-10 w-10 rounded-lg bg-indigo-500/20 flex items-center justify-center mb-4 text-primary">
-                        ✦
+            <div className="mt-20 w-full grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+                <div className="card bg-white border border-gray-200 rounded-xl p-6 shadow-xs">
+                    <div className="h-10 w-10 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
+                        <Sparkles className="w-5 h-5" />
                     </div>
-                    <h3 className="text-xl font-semibold mb-2">Curated Selection</h3>
-                    <p className="text-muted leading-relaxed text-[0.95rem]">Handpicked items that match your unparalleled taste.</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Curated Selection</h3>
+                    <p className="text-gray-600 text-sm leading-relaxed">Carefully sourced products designed to match high quality standards.</p>
                 </div>
-                <div className="card">
-                    <div className="h-10 w-10 rounded-lg bg-purple-500/20 flex items-center justify-center mb-4 text-[#c084fc]">
-                        ⚡
+                <div className="card bg-white border border-gray-200 rounded-xl p-6 shadow-xs">
+                    <div className="h-10 w-10 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
+                        <Zap className="w-5 h-5" />
                     </div>
-                    <h3 className="text-xl font-semibold mb-2">Lightning Fast</h3>
-                    <p className="text-muted leading-relaxed text-[0.95rem]">Experience instant browsing and seamless checkout flows.</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Fast Fulfillment</h3>
+                    <p className="text-gray-600 text-sm leading-relaxed">Prompt order processing with dedicated live map tracking on every delivery.</p>
                 </div>
-                <div className="card">
-                    <div className="h-10 w-10 rounded-lg bg-sky-500/20 flex items-center justify-center mb-4 text-[#38bdf8]">
-                        🛡️
+                <div className="card bg-white border border-gray-200 rounded-xl p-6 shadow-xs">
+                    <div className="h-10 w-10 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
+                        <ShieldCheck className="w-5 h-5" />
                     </div>
-                    <h3 className="text-xl font-semibold mb-2">Secure Platform</h3>
-                    <p className="text-muted leading-relaxed text-[0.95rem]">Your data and transactions are protected by bleeding-edge security.</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Secure Payments</h3>
+                    <p className="text-gray-600 text-sm leading-relaxed">Bank-grade end-to-end payment security with trusted payment providers.</p>
                 </div>
             </div>
         </div>

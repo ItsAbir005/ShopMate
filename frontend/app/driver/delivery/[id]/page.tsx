@@ -2,8 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useDriver } from "../../../context/DriverContext";
 import ChatBox from "../../../components/ChatBox";
+import {
+    ClipboardList,
+    Package,
+    Truck,
+    CheckCircle2,
+    MapPin,
+    ExternalLink,
+    MessageSquare,
+    Check,
+    ArrowLeft,
+    AlertCircle
+} from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -21,11 +34,11 @@ interface Shipment {
     pickedUpAt?: string;
 }
 
-const STEPS: { key: ShipmentStatus; label: string; icon: string }[] = [
-    { key: "assigned", label: "Assigned", icon: "📋" },
-    { key: "picked_up", label: "Picked Up", icon: "📦" },
-    { key: "out_for_delivery", label: "Out for Delivery", icon: "🚚" },
-    { key: "delivered", label: "Delivered", icon: "✅" },
+const STEPS: { key: ShipmentStatus; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { key: "assigned", label: "Assigned", icon: ClipboardList },
+    { key: "picked_up", label: "Picked Up", icon: Package },
+    { key: "out_for_delivery", label: "Out for Delivery", icon: Truck },
+    { key: "delivered", label: "Delivered", icon: CheckCircle2 },
 ];
 
 const NEXT_STATUS: Partial<Record<ShipmentStatus, ShipmentStatus>> = {
@@ -37,7 +50,7 @@ const NEXT_STATUS: Partial<Record<ShipmentStatus, ShipmentStatus>> = {
 const NEXT_LABEL: Partial<Record<ShipmentStatus, string>> = {
     assigned: "Mark as Picked Up",
     picked_up: "Mark as Out for Delivery",
-    out_for_delivery: "Confirm Delivery (OTP)",
+    out_for_delivery: "Confirm Delivery with OTP",
 };
 
 export default function DeliveryDetailPage() {
@@ -59,8 +72,11 @@ export default function DeliveryDetailPage() {
             });
             const data = await res.json();
             setShipment(data);
-        } catch { setShipment(null); }
-        finally { setLoading(false); }
+        } catch {
+            setShipment(null);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => { if (token) fetchShipment(); }, [token]);
@@ -74,7 +90,8 @@ export default function DeliveryDetailPage() {
             setShowOtp(true);
             return;
         }
-        setUpdating(true); setError("");
+        setUpdating(true);
+        setError("");
         try {
             await fetch(`${API}/shipping/${id}/status`, {
                 method: "PUT",
@@ -82,12 +99,16 @@ export default function DeliveryDetailPage() {
                 body: JSON.stringify({ status: nextStatus }),
             });
             await fetchShipment();
-        } catch (e: any) { setError(e.message); }
-        finally { setUpdating(false); }
+        } catch (e: any) {
+            setError(e.message || "Failed to update status");
+        } finally {
+            setUpdating(false);
+        }
     };
 
     const handleConfirmDelivery = async () => {
-        setUpdating(true); setError("");
+        setUpdating(true);
+        setError("");
         try {
             const res = await fetch(`${API}/shipping/${id}/confirm-delivery`, {
                 method: "POST",
@@ -95,144 +116,162 @@ export default function DeliveryDetailPage() {
                 body: JSON.stringify({ otp }),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.message);
+            if (!res.ok) throw new Error(data.message || "OTP verification failed");
             router.push("/driver/dashboard");
-        } catch (e: any) { setError(e.message); }
-        finally { setUpdating(false); }
+        } catch (e: any) {
+            setError(e.message || "Failed to confirm delivery");
+        } finally {
+            setUpdating(false);
+        }
     };
 
-    if (loading) return (
-        <div style={{ maxWidth: "700px", margin: "40px auto", padding: "0 24px" }}>
-            <div style={{ height: "300px", background: "rgba(255,255,255,0.03)", borderRadius: "16px" }} />
-        </div>
-    );
+    if (loading) {
+        return (
+            <div className="max-w-2xl mx-auto px-4 py-10 bg-white min-h-[80vh]">
+                <div className="h-64 bg-gray-50 border border-gray-200 rounded-xl animate-pulse" />
+            </div>
+        );
+    }
 
-    if (!shipment) return (
-        <div style={{ textAlign: "center", padding: "80px 24px", color: "#94a3b8" }}>
-            <p style={{ fontSize: "40px" }}>📭</p>
-            <p>No active delivery found.</p>
-        </div>
-    );
+    if (!shipment) {
+        return (
+            <div className="text-center py-24 px-4 bg-white min-h-[80vh]">
+                <Package className="w-12 h-12 text-gray-300 stroke-1 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">No active delivery found.</p>
+                <Link href="/driver/dashboard" className="text-indigo-600 hover:text-indigo-700 text-xs font-semibold mt-3 inline-block">
+                    Return to Dashboard
+                </Link>
+            </div>
+        );
+    }
 
-    const currentStep = STEPS.findIndex(s => s.key === shipment.status);
+    const currentStep = STEPS.findIndex((s) => s.key === shipment.status);
     const nextLabel = NEXT_LABEL[shipment.status];
     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
         `${shipment.deliveryAddress.street}, ${shipment.deliveryAddress.city}`
     )}`;
 
     return (
-        <div style={{ maxWidth: "700px", margin: "0 auto", padding: "40px 24px" }}>
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 bg-white min-h-[85vh]">
             {/* Header */}
-            <div style={{ marginBottom: "28px" }}>
-                <p style={{ color: "#94a3b8", fontSize: "13px", margin: "0 0 4px" }}>← Delivery Detail</p>
-                <div style={{ display: "flex", alignItems: "baseline", gap: "12px" }}>
-                    <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#fff", margin: "0 0 4px", fontFamily: "monospace" }}>
-                        {shipment.trackingCode}
-                    </h1>
-                    {shipment.order_id && (
-                        <span style={{ fontSize: "14px", color: "#94a3b8", fontFamily: "monospace", background: "rgba(255,255,255,0.05)", padding: "4px 8px", borderRadius: "6px" }}>
-                            Order #{shipment.order_id._id.slice(-10).toUpperCase()}
-                        </span>
-                    )}
+            <div className="mb-8 pb-4 border-b border-gray-100">
+                <Link
+                    href="/driver/dashboard"
+                    className="text-xs text-gray-500 hover:text-gray-800 mb-2 inline-flex items-center gap-1 font-medium"
+                >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Dashboard</span>
+                </Link>
+                <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <div>
+                        <h1 className="text-2xl font-bold font-mono text-gray-900">
+                            {shipment.trackingCode}
+                        </h1>
+                        {shipment.order_id && (
+                            <span className="text-xs text-gray-500 font-mono mt-0.5 inline-block">
+                                Order #{shipment.order_id._id.slice(-8).toUpperCase()}
+                            </span>
+                        )}
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase">
+                        {shipment.status.replace(/_/g, " ")}
+                    </span>
                 </div>
             </div>
 
             {/* Progress stepper */}
-            <div style={{
-                background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "16px", padding: "24px", marginBottom: "20px",
-            }}>
-                <div style={{ display: "flex", justifyContent: "space-between", position: "relative" }}>
-                    <div style={{ position: "absolute", top: "16px", left: 0, right: 0, height: "2px", background: "rgba(255,255,255,0.08)" }} />
-                    <div style={{ position: "absolute", top: "16px", left: 0, height: "2px", background: "#fb923c", width: `${(currentStep / (STEPS.length - 1)) * 100}%`, transition: "width 0.5s" }} />
-                    {STEPS.map((step, i) => (
-                        <div key={step.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", zIndex: 1 }}>
-                            <div style={{
-                                width: "32px", height: "32px", borderRadius: "50%",
-                                background: i <= currentStep ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
-                                border: i <= currentStep ? "none" : "1px solid rgba(255,255,255,0.1)",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: "14px",
-                            }}>
-                                {i < currentStep ? "✓" : step.icon}
+            <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6 shadow-xs">
+                <div className="flex justify-between items-center relative">
+                    <div className="absolute top-4 left-4 right-4 h-0.5 bg-gray-200 z-0" />
+                    {STEPS.map((step, i) => {
+                        const StepIcon = step.icon;
+                        const isDone = i <= currentStep;
+                        return (
+                            <div key={step.key} className="flex flex-col items-center z-10">
+                                <div
+                                    className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
+                                        isDone
+                                            ? "bg-indigo-600 border-indigo-600 text-white"
+                                            : "bg-white border-gray-300 text-gray-400"
+                                    }`}
+                                >
+                                    {i < currentStep ? <Check className="w-4 h-4" /> : <StepIcon className="w-4 h-4" />}
+                                </div>
+                                <span className={`text-[11px] mt-2 font-medium ${isDone ? "text-gray-900" : "text-gray-400"}`}>
+                                    {step.label}
+                                </span>
                             </div>
-                            <span style={{ fontSize: "11px", marginTop: "6px", color: i <= currentStep ? "#fb923c" : "#64748b" }}>
-                                {step.label}
-                            </span>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 
             {/* Delivery address */}
-            <div style={{
-                background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "14px", padding: "20px", marginBottom: "16px",
-            }}>
-                <p style={{ margin: "0 0 8px", fontSize: "12px", color: "#64748b", textTransform: "uppercase" }}>📍 Delivery Address</p>
-                <p style={{ margin: "0 0 4px", color: "#e2e8f0", fontSize: "15px", fontWeight: 500 }}>
+            <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-xs">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Destination Address</span>
+                </p>
+                <p className="text-sm font-medium text-gray-900">
                     {shipment.deliveryAddress.street}
                 </p>
-                <p style={{ margin: "0 0 12px", color: "#94a3b8", fontSize: "13px" }}>
+                <p className="text-xs text-gray-500 mt-0.5">
                     {shipment.deliveryAddress.city}, {shipment.deliveryAddress.state} {shipment.deliveryAddress.zip}
                 </p>
-                <div style={{ display: "flex", gap: "12px", marginTop: "12px", flexWrap: "wrap" }}>
-                    <a href={mapsUrl} target="_blank" rel="noreferrer" style={{
-                        display: "inline-block", padding: "8px 16px",
-                        background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)",
-                        borderRadius: "8px", color: "#fb923c", fontSize: "13px", fontWeight: 600,
-                        textDecoration: "none",
-                    }}>
-                        🗺️ Open in Google Maps
+                <div className="flex gap-2.5 mt-4 flex-wrap">
+                    <a
+                        href={mapsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs font-medium transition-colors"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open in Google Maps</span>
                     </a>
-                    <button onClick={() => setIsChatOpen(true)} style={{
-                        display: "inline-block", padding: "8px 16px",
-                        background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.3)",
-                        borderRadius: "8px", color: "#34d399", fontSize: "13px", fontWeight: 600,
-                        cursor: "pointer",
-                    }}>
-                        💬 Chat with Customer
+                    <button
+                        onClick={() => setIsChatOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs font-medium transition-colors cursor-pointer"
+                    >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Chat with Customer</span>
                     </button>
                 </div>
             </div>
 
             {/* Error */}
             {error && (
-                <div style={{ padding: "12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "10px", color: "#f87171", fontSize: "13px", marginBottom: "14px" }}>
-                    {error}
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs mb-5 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{error}</span>
                 </div>
             )}
 
             {/* OTP confirmation panel */}
             {showOtp && (
-                <div style={{
-                    background: "linear-gradient(135deg, rgba(251,146,60,0.08), rgba(0,0,0,0.5))",
-                    border: "1px solid rgba(251,146,60,0.25)", borderRadius: "14px", padding: "20px", marginBottom: "16px",
-                }}>
-                    <p style={{ margin: "0 0 12px", fontWeight: 600, color: "#fb923c" }}>Enter Customer OTP to Confirm Delivery</p>
+                <div className="bg-white border border-indigo-200 rounded-xl p-5 mb-6 shadow-xs">
+                    <p className="font-semibold text-gray-900 text-xs mb-3">
+                        Enter Customer 6-Digit OTP to Complete Delivery
+                    </p>
                     <input
-                        type="text" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/, "").slice(0, 6))}
-                        placeholder="6-digit OTP"
+                        type="text"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/, "").slice(0, 6))}
+                        placeholder="••••••"
                         maxLength={6}
-                        style={{
-                            width: "100%", padding: "12px", background: "rgba(0,0,0,0.4)",
-                            border: "1px solid rgba(251,146,60,0.3)", borderRadius: "10px",
-                            color: "#fff", fontSize: "20px", fontFamily: "monospace", textAlign: "center",
-                            letterSpacing: "0.3em", outline: "none", boxSizing: "border-box", marginBottom: "12px",
-                        }}
+                        className="w-full p-2.5 bg-white border border-gray-300 rounded-lg text-xl font-mono text-center tracking-widest text-gray-900 outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 mb-3"
                     />
-                    <div style={{ display: "flex", gap: "10px" }}>
-                        <button onClick={handleConfirmDelivery} disabled={otp.length !== 6 || updating} style={{
-                            flex: 1, padding: "12px", background: "linear-gradient(135deg, #22c55e, #16a34a)",
-                            color: "#fff", border: "none", borderRadius: "10px", fontWeight: 700, cursor: "pointer",
-                            opacity: otp.length !== 6 ? 0.5 : 1,
-                        }}>
-                            {updating ? "Confirming..." : "✅ Confirm Delivery"}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleConfirmDelivery}
+                            disabled={otp.length !== 6 || updating}
+                            className="flex-1 py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50 transition-colors"
+                        >
+                            {updating ? "Verifying…" : "Confirm Delivery"}
                         </button>
-                        <button onClick={() => setShowOtp(false)} style={{
-                            padding: "12px 16px", background: "none", border: "1px solid rgba(255,255,255,0.1)",
-                            borderRadius: "10px", color: "#94a3b8", cursor: "pointer",
-                        }}>
+                        <button
+                            onClick={() => setShowOtp(false)}
+                            className="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs cursor-pointer"
+                        >
                             Cancel
                         </button>
                     </div>
@@ -241,18 +280,17 @@ export default function DeliveryDetailPage() {
 
             {/* Status action button */}
             {nextLabel && !showOtp && shipment.status !== "delivered" && (
-                <button onClick={handleStatusUpdate} disabled={updating} style={{
-                    width: "100%", padding: "14px",
-                    background: "linear-gradient(135deg, #f97316, #ea580c)",
-                    color: "#fff", border: "none", borderRadius: "12px",
-                    fontWeight: 700, fontSize: "15px", cursor: "pointer", opacity: updating ? 0.7 : 1,
-                }}>
-                    {updating ? "Updating..." : nextLabel}
+                <button
+                    onClick={handleStatusUpdate}
+                    disabled={updating}
+                    className="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50 transition-colors"
+                >
+                    {updating ? "Updating…" : nextLabel}
                 </button>
             )}
 
             {isChatOpen && shipment && (
-                <ChatBox 
+                <ChatBox
                     shipmentId={shipment._id}
                     userMode="driver"
                     userId={driver?.id || ""}

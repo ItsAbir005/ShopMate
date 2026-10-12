@@ -1,8 +1,8 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-    title: 'Aura Commerce',
-    description: 'A premium shopping experience',
+    title: 'ShopMate',
+    description: 'ShopMate - A modern shopping experience',
 };
 
 export default function RootLayout({

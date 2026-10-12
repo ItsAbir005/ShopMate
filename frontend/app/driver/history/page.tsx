@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useDriver } from "../../context/DriverContext";
+import { Inbox, CheckCircle2, MapPin } from "lucide-react";
 
 interface HistoryItem {
     _id: string;
@@ -33,51 +34,50 @@ export default function DriverHistoryPage() {
     useEffect(() => { load(page); }, [page]);
 
     return (
-        <div style={{ maxWidth: "800px", margin: "0 auto", padding: "40px 24px" }}>
-            <div style={{ marginBottom: "28px" }}>
-                <h1 style={{ fontSize: "26px", fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>Delivery History</h1>
-                <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>{total} completed deliveries</p>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 bg-white min-h-[85vh]">
+            <div className="mb-8 pb-4 border-b border-gray-100">
+                <h1 className="text-2xl font-bold text-gray-900 mb-1">Delivery History</h1>
+                <p className="text-xs text-gray-500">{total} completed deliveries</p>
             </div>
 
             {loading ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div className="space-y-3">
                     {[1, 2, 3].map(i => (
-                        <div key={i} style={{ height: "80px", background: "rgba(255,255,255,0.03)", borderRadius: "14px" }} />
+                        <div key={i} className="h-20 bg-gray-50 border border-gray-200 rounded-xl animate-pulse" />
                     ))}
                 </div>
             ) : history.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "60px", color: "#64748b" }}>
-                    <p style={{ fontSize: "40px", margin: "0 0 12px" }}>📭</p>
-                    <p>No deliveries completed yet.</p>
+                <div className="text-center py-20 bg-white border border-gray-200 rounded-xl p-8">
+                    <Inbox className="w-10 h-10 text-gray-300 stroke-1 mx-auto mb-2" />
+                    <p className="text-xs text-gray-500">No deliveries completed yet.</p>
                 </div>
             ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div className="space-y-3">
                     {history.map((item) => (
-                        <div key={item._id} style={{
-                            background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
-                            borderRadius: "14px", padding: "18px 20px",
-                            display: "flex", justifyContent: "space-between", alignItems: "center",
-                        }}>
+                        <div
+                            key={item._id}
+                            className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 flex justify-between items-center shadow-xs"
+                        >
                             <div>
-                                <p style={{ margin: "0 0 4px", fontWeight: 600, color: "#fb923c", fontFamily: "monospace" }}>
+                                <p className="font-mono text-sm font-bold text-gray-900 mb-1">
                                     {item.trackingCode}
                                 </p>
-                                <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>
-                                    📍 {item.deliveryAddress.city}, {item.deliveryAddress.state}
-                                    {item.deliveredAt && ` · ${new Date(item.deliveredAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+                                <p className="text-xs text-gray-500 flex items-center gap-1">
+                                    <MapPin className="w-3 h-3 text-gray-400" />
+                                    <span>{item.deliveryAddress.city}, {item.deliveryAddress.state}</span>
+                                    {item.deliveredAt && (
+                                        <span>· {new Date(item.deliveredAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+                                    )}
                                 </p>
                             </div>
-                            <div style={{ textAlign: "right" }}>
-                                <span style={{
-                                    display: "inline-block", padding: "3px 10px", borderRadius: "999px",
-                                    background: "rgba(34,197,94,0.12)", color: "#22c55e",
-                                    fontSize: "11px", fontWeight: 600, border: "1px solid rgba(34,197,94,0.2)",
-                                }}>
-                                    DELIVERED
+                            <div className="text-right">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Delivered</span>
                                 </span>
                                 {item.order_id?.total_amount && (
-                                    <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748b" }}>
-                                        ₹{item.order_id.total_amount.toFixed(2)}
+                                    <p className="text-xs text-gray-600 font-medium mt-1">
+                                        ${item.order_id.total_amount.toFixed(2)}
                                     </p>
                                 )}
                             </div>
@@ -88,13 +88,17 @@ export default function DriverHistoryPage() {
 
             {/* Pagination */}
             {pages > 1 && (
-                <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "24px" }}>
+                <div className="flex gap-1.5 justify-center mt-8">
                     {Array.from({ length: pages }, (_, i) => i + 1).map(p => (
-                        <button key={p} onClick={() => setPage(p)} style={{
-                            padding: "8px 14px", borderRadius: "8px", border: "none", cursor: "pointer",
-                            background: p === page ? "linear-gradient(135deg, #f97316, #ea580c)" : "rgba(255,255,255,0.05)",
-                            color: p === page ? "#fff" : "#94a3b8",
-                        }}>
+                        <button
+                            key={p}
+                            onClick={() => setPage(p)}
+                            className={`w-8 h-8 rounded-md text-xs font-medium cursor-pointer transition-colors ${
+                                p === page
+                                    ? "bg-indigo-600 text-white"
+                                    : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                            }`}
+                        >
                             {p}
                         </button>
                     ))}

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../context/AuthContext";
-
+import { Clock, CheckCircle, XCircle, Inbox, Package, Folder, Plus, Trash2 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -23,9 +23,9 @@ type Listing = {
 };
 
 const STATUS_MAP = {
-    pending: { label: "Pending Review", color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.25)", icon: "🕐" },
-    approved: { label: "Approved — Live", color: "#10b981", bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.25)", icon: "✅" },
-    rejected: { label: "Rejected", color: "#ef4444", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", icon: "❌" },
+    pending: { label: "Pending Review", color: "text-amber-700", bg: "bg-amber-50", border: "border-amber-200", icon: Clock },
+    approved: { label: "Approved — Live", color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200", icon: CheckCircle },
+    rejected: { label: "Rejected", color: "text-red-700", bg: "bg-red-50", border: "border-red-200", icon: XCircle },
 };
 
 export default function MyListingsPage() {
@@ -92,91 +92,77 @@ export default function MyListingsPage() {
     if (!mounted) return null;
 
     return (
-        <div style={{ minHeight: "80vh", padding: "48px 24px", maxWidth: "920px", margin: "0 auto" }}>
+        <div className="min-h-[80vh] py-12 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto bg-white">
             {/* Toast */}
             {toast && (
-                <div style={{
-                    position: "fixed", bottom: "24px", right: "24px", zIndex: 999,
-                    background: toast.startsWith("Error") ? "#ef4444" : "#10b981",
-                    color: "#fff", padding: "12px 20px", borderRadius: "12px",
-                    fontSize: "14px", fontWeight: 500, boxShadow: "0 8px 30px rgba(0,0,0,0.3)",
-                }}>
+                <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-semibold shadow-lg ${
+                    toast.startsWith("Error") ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
+                }`}>
                     {toast}
                 </div>
             )}
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "36px", flexWrap: "wrap", gap: "12px" }}>
+            <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
                 <div>
-                    <h1 style={{
-                        fontSize: "36px", fontWeight: 800, marginBottom: "8px",
-                        background: "linear-gradient(135deg, #818cf8, #6366f1)",
-                        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                    }}>My Listings</h1>
-                    <p style={{ color: "#6b7280", fontSize: "14px" }}>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">My Listings</h1>
+                    <p className="text-sm text-gray-600">
                         Track the status of your submitted sell listings.
                     </p>
                 </div>
-                <Link href="/sell" style={{
-                    padding: "11px 22px", borderRadius: "10px", textDecoration: "none",
-                    background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                    color: "#fff", fontWeight: 600, fontSize: "14px",
-                    boxShadow: "0 4px 14px rgba(99,102,241,0.35)",
-                }}>
-                    + New Listing
+                <Link
+                    href="/sell"
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
+                >
+                    <Plus className="w-4 h-4" />
+                    New Listing
                 </Link>
             </div>
 
             {/* Status legend */}
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "28px" }}>
-                {(Object.entries(STATUS_MAP) as [string, typeof STATUS_MAP["pending"]][]).map(([key, val]) => (
-                    <div key={key} style={{
-                        display: "flex", alignItems: "center", gap: "6px",
-                        background: val.bg, border: `1px solid ${val.border}`,
-                        borderRadius: "8px", padding: "5px 12px", fontSize: "12px", fontWeight: 600, color: val.color,
-                    }}>
-                        {val.icon} {val.label}
-                    </div>
-                ))}
+            <div className="flex gap-2 flex-wrap mb-6">
+                {(Object.entries(STATUS_MAP) as [string, typeof STATUS_MAP["pending"]][]).map(([key, val]) => {
+                    const Icon = val.icon;
+                    return (
+                        <div
+                            key={key}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${val.bg} ${val.border} ${val.color}`}
+                        >
+                            <Icon className="w-3.5 h-3.5" />
+                            {val.label}
+                        </div>
+                    );
+                })}
             </div>
 
             {loading ? (
-                <div style={{ display: "grid", gap: "16px" }}>
+                <div className="space-y-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i} style={{
-                            height: "120px", borderRadius: "16px",
-                            background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
-                            animation: "pulse 1.5s infinite",
-                        }} />
+                        <div key={i} className="h-28 rounded-xl bg-gray-50 border border-gray-200 animate-pulse" />
                     ))}
                 </div>
             ) : error ? (
-                <div style={{
-                    background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                    borderRadius: "14px", padding: "24px", textAlign: "center", color: "#f87171",
-                }}>
-                    ⚠️ {error}
+                <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center text-sm font-medium text-red-700">
+                    {error}
                 </div>
             ) : listings.length === 0 ? (
-                <div style={{
-                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
-                    borderRadius: "20px", padding: "60px 24px", textAlign: "center",
-                }}>
-                    <div style={{ fontSize: "56px", marginBottom: "16px" }}>📭</div>
-                    <h3 style={{ fontSize: "20px", fontWeight: 600, color: "#e2e8f0", marginBottom: "8px" }}>No listings yet</h3>
-                    <p style={{ color: "#6b7280", marginBottom: "24px" }}>Submit your first sell listing to get started.</p>
-                    <Link href="/sell" style={{
-                        padding: "11px 24px", borderRadius: "10px", textDecoration: "none",
-                        background: "linear-gradient(135deg, #6366f1, #818cf8)",
-                        color: "#fff", fontWeight: 600, fontSize: "14px",
-                    }}>
-                        Start Selling →
+                <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center max-w-md mx-auto">
+                    <Inbox className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">No listings yet</h3>
+                    <p className="text-sm text-gray-500 mb-6">Submit your first sell listing to get started.</p>
+                    <Link
+                        href="/sell"
+                        className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Start Selling
                     </Link>
                 </div>
             ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div className="space-y-4">
                     {listings.map(listing => {
                         const st = STATUS_MAP[listing.status];
+                        const StatusIcon = st.icon;
                         const canDelete = listing.status !== "approved";
                         const catName = typeof listing.category_id === "object"
                             ? listing.category_id?.name
@@ -186,90 +172,63 @@ export default function MyListingsPage() {
                             : null;
 
                         return (
-                            <div key={listing._id} style={{
-                                background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)",
-                                borderRadius: "16px", padding: "20px 24px",
-                                display: "flex", gap: "20px", alignItems: "flex-start",
-                                transition: "border-color 0.2s",
-                            }}>
+                            <div key={listing._id} className="bg-white border border-gray-200 rounded-xl p-5 flex flex-col sm:flex-row gap-5 items-start">
                                 {/* Image */}
-                                <div style={{
-                                    width: "90px", height: "90px", borderRadius: "12px",
-                                    flexShrink: 0, overflow: "hidden",
-                                    background: "rgba(0,0,0,0.3)",
-                                    border: "1px solid rgba(255,255,255,0.08)",
-                                }}>
+                                <div className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0 flex items-center justify-center">
                                     {listing.images?.[0] ? (
-                                        <img src={listing.images[0]} alt={listing.title}
-                                            style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                        <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover" />
                                     ) : (
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: "28px", opacity: 0.3 }}>📦</div>
+                                        <Package className="w-8 h-8 text-gray-300" />
                                     )}
                                 </div>
 
                                 {/* Info */}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", flexWrap: "wrap" }}>
-                                        <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#e2e8f0", flexShrink: 0 }}>
-                                            {listing.title}
-                                        </h3>
-                                        <span style={{
-                                            padding: "2px 10px", borderRadius: "6px", fontSize: "11px",
-                                            fontWeight: 700, background: st.bg, border: `1px solid ${st.border}`, color: st.color,
-                                        }}>
-                                            {st.icon} {st.label}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                        <h3 className="font-bold text-gray-900 text-base">{listing.title}</h3>
+                                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${st.bg} ${st.border} ${st.color}`}>
+                                            <StatusIcon className="w-3 h-3" />
+                                            {st.label}
                                         </span>
                                     </div>
 
-                                    <p style={{ color: "#6b7280", fontSize: "13px", marginTop: "4px", maxWidth: "560px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    <p className="text-sm text-gray-500 truncate max-w-xl mb-2">
                                         {listing.description}
                                     </p>
 
-                                    <div style={{ display: "flex", gap: "18px", marginTop: "10px", flexWrap: "wrap" }}>
-                                        <span style={{ fontSize: "14px", fontWeight: 700, color: "#10b981" }}>
+                                    <div className="flex gap-4 flex-wrap text-xs text-gray-600">
+                                        <span className="font-bold text-gray-900 text-sm">
                                             {finalPrice ? `$${finalPrice}` : `$${listing.price.toFixed(2)}`}
-                                            {finalPrice && <span style={{ color: "#6b7280", fontWeight: 400, fontSize: "12px", marginLeft: "6px", textDecoration: "line-through" }}>${listing.price.toFixed(2)}</span>}
+                                            {finalPrice && <span className="text-gray-400 font-normal line-through ml-1.5">${listing.price.toFixed(2)}</span>}
                                         </span>
-                                        <span style={{ fontSize: "12px", color: "#6b7280" }}>Stock: {listing.stock}</span>
-                                        {catName && <span style={{ fontSize: "12px", color: "#6b7280" }}>📂 {catName}</span>}
-                                        <span style={{ fontSize: "12px", color: "#4b5563" }}>
+                                        <span>Stock: {listing.stock}</span>
+                                        {catName && <span className="flex items-center gap-1"><Folder className="w-3 h-3" /> {catName}</span>}
+                                        <span className="text-gray-400">
                                             {new Date(listing.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                         </span>
                                     </div>
 
-                                    {/* Rejection reason */}
                                     {listing.status === "rejected" && listing.rejectionReason && (
-                                        <div style={{
-                                            marginTop: "10px",
-                                            background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.2)",
-                                            borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "#fca5a5",
-                                        }}>
+                                        <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-700">
                                             <strong>Reason:</strong> {listing.rejectionReason}
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Actions */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
+                                <div className="flex sm:flex-col gap-2 flex-shrink-0 w-full sm:w-auto">
                                     {canDelete && (
                                         <button
                                             onClick={() => handleDelete(listing._id)}
                                             disabled={deleting === listing._id}
-                                            style={{
-                                                padding: "7px 16px", borderRadius: "8px", border: "1px solid rgba(239,68,68,0.25)",
-                                                background: "rgba(239,68,68,0.08)", color: "#f87171",
-                                                fontSize: "13px", fontWeight: 600, cursor: "pointer",
-                                                opacity: deleting === listing._id ? 0.5 : 1,
-                                            }}>
+                                            className="px-3.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors disabled:opacity-50"
+                                        >
                                             {deleting === listing._id ? "Deleting…" : "Delete"}
                                         </button>
                                     )}
                                     {listing.status === "approved" && (
-                                        <span style={{
-                                            fontSize: "11px", color: "#4b5563", textAlign: "center",
-                                            padding: "6px 10px",
-                                        }}>
-                                            Contact support to remove
+                                        <span className="text-[11px] text-gray-400">
+                                            Active in store
                                         </span>
                                     )}
                                 </div>

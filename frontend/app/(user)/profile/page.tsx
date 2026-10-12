@@ -29,7 +29,6 @@ export default function ProfilePage() {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // ... useEffects and return statements ...
     useEffect(() => {
         setMounted(true);
     }, []);
@@ -45,8 +44,8 @@ export default function ProfilePage() {
 
     if (!mounted || loading) {
         return (
-            <div className="container-custom mt-16 flex justify-center items-center min-h-[60vh]">
-                <div className="h-10 w-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+            <div className="max-w-4xl mx-auto px-4 mt-16 flex justify-center items-center min-h-[60vh]">
+                <div className="h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
             </div>
         );
     }
@@ -81,7 +80,8 @@ export default function ProfilePage() {
 
         try {
             const token = localStorage.getItem("token");
-            const res = await fetch("http://localhost:4000/api/users/profile/image", {
+            const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+            const res = await fetch(`${API}/users/profile/image`, {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${token}`
@@ -140,109 +140,108 @@ export default function ProfilePage() {
     };
 
     return (
-        <div className="container-custom mt-16 max-w-4xl min-h-[80vh]">
-            <h1 className="text-4xl font-bold mb-8 gradient-text">Your Profile</h1>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12 min-h-[80vh] bg-white">
+            <h1 className="text-3xl font-bold text-gray-900 mb-8">Your Profile</h1>
 
-            <div className="flex border-b border-card-border mb-8 overflow-x-auto">
+            <div className="flex border-b border-gray-200 mb-8 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab("account")}
-                    className={`px-6 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === "account" ? "border-indigo-500 text-indigo-400 bg-indigo-500/10" : "border-transparent text-muted hover:text-white"}`}
+                    className={`px-5 py-3 font-semibold text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === "account" ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-900"}`}
                 >
                     Account Settings
                 </button>
                 <button
                     onClick={() => setActiveTab("addresses")}
-                    className={`px-6 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === "addresses" ? "border-indigo-500 text-indigo-400 bg-indigo-500/10" : "border-transparent text-muted hover:text-white"}`}
+                    className={`px-5 py-3 font-semibold text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === "addresses" ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-900"}`}
                 >
                     Saved Addresses
                 </button>
                 <button
                     onClick={() => setActiveTab("notifications")}
-                    className={`px-6 py-3 font-medium text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === "notifications" ? "border-indigo-500 text-indigo-400 bg-indigo-500/10" : "border-transparent text-muted hover:text-white"}`}
+                    className={`px-5 py-3 font-semibold text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === "notifications" ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-900"}`}
                 >
                     Notifications
                 </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="card md:col-span-1 h-fit">
-                    <div className="flex flex-col items-center text-center">
-                        <div
-                            className="relative w-32 h-32 rounded-full mb-4 bg-indigo-500/20 text-primary flex items-center justify-center text-4xl font-bold cursor-pointer overflow-hidden border-2 border-indigo-500/30 group"
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            {uploading ? (
-                                <div className="h-8 w-8 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
-                            ) : user.profileImage ? (
-                                <img src={user.profileImage} alt="Profile" className="w-full h-full object-cover" />
-                            ) : (
-                                user.name.charAt(0).toUpperCase()
-                            )}
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
-                                <span className="text-sm font-medium">Change</span>
-                                <span className="text-xs">Photo</span>
-                            </div>
+                {/* User card */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6 md:col-span-1 h-fit text-center">
+                    <div
+                        className="relative w-28 h-28 rounded-full mx-auto mb-4 bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl font-bold cursor-pointer overflow-hidden border-2 border-indigo-200 group"
+                        onClick={() => fileInputRef.current?.click()}
+                    >
+                        {uploading ? (
+                            <div className="h-6 w-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                        ) : user.profileImage ? (
+                            <img src={user.profileImage} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            user.name.charAt(0).toUpperCase()
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white">
+                            <span className="text-xs font-semibold">Change</span>
                         </div>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="hidden"
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                        />
-
-                        <h2 className="text-2xl font-semibold mb-1">{user.name}</h2>
-                        <p className="text-muted mb-6">{user.email}</p>
-
-                        <button
-                            onClick={logout}
-                            className="btn bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 w-full"
-                        >
-                            Log Out
-                        </button>
                     </div>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                    />
+
+                    <h2 className="text-xl font-bold text-gray-900 mb-1">{user.name}</h2>
+                    <p className="text-sm text-gray-500 mb-6">{user.email}</p>
+
+                    <button
+                        onClick={logout}
+                        className="w-full py-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-sm font-semibold transition-colors"
+                    >
+                        Log Out
+                    </button>
                 </div>
 
-                <div className="card md:col-span-2">
+                {/* Tab content */}
+                <div className="bg-white border border-gray-200 rounded-xl p-6 md:col-span-2">
                     {activeTab === "account" && (
                         <>
-                            <div className="flex justify-between items-center mb-6 border-b border-card-border pb-4">
-                                <h3 className="text-xl font-semibold">Account Details</h3>
+                            <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
+                                <h3 className="text-lg font-bold text-gray-900">Account Details</h3>
                                 <button
                                     onClick={() => setIsEditing(!isEditing)}
-                                    className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
                                 >
                                     {isEditing ? "Cancel" : "Edit Profile"}
                                 </button>
                             </div>
 
-                            <div className="space-y-6">
+                            <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm text-muted mb-1">Full Name</label>
+                                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Full Name</label>
                                     {isEditing ? (
                                         <input
                                             type="text"
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
-                                            className="w-full p-3 bg-black/30 rounded-lg border border-indigo-500/30 text-white focus:outline-none focus:border-indigo-500"
+                                            className="w-full p-2.5 bg-white rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:border-indigo-600"
                                         />
                                     ) : (
-                                        <div className="p-3 bg-black/20 rounded-lg border border-card-border/50 text-white">
+                                        <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200 text-gray-900 text-sm">
                                             {user.name}
                                         </div>
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm text-muted mb-1">Email Address</label>
+                                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Email Address</label>
                                     {isEditing ? (
                                         <input
                                             type="email"
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            className="w-full p-3 bg-black/30 rounded-lg border border-indigo-500/30 text-white focus:outline-none focus:border-indigo-500"
+                                            className="w-full p-2.5 bg-white rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:border-indigo-600"
                                         />
                                     ) : (
-                                        <div className="p-3 bg-black/20 rounded-lg border border-card-border/50 text-white">
+                                        <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200 text-gray-900 text-sm">
                                             {user.email}
                                         </div>
                                     )}
@@ -252,71 +251,71 @@ export default function ProfilePage() {
                                     <button
                                         onClick={handleSaveProfile}
                                         disabled={saving}
-                                        className="btn-primary w-full flex justify-center mt-4"
+                                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm transition-colors mt-2"
                                     >
                                         {saving ? "Saving..." : "Save Changes"}
                                     </button>
                                 )}
                             </div>
 
-                            <div className="mt-8 pt-8 border-t border-card-border">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-xl font-semibold">Security</h3>
+                            <div className="mt-8 pt-6 border-t border-gray-200">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-gray-900">Security</h3>
                                     <button
                                         onClick={() => setShowPasswordChange(!showPasswordChange)}
-                                        className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+                                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
                                     >
                                         {showPasswordChange ? "Cancel" : "Change Password"}
                                     </button>
                                 </div>
 
                                 {showPasswordChange && (
-                                    <div className="space-y-4 mb-8 p-4 bg-black/20 rounded-lg border border-card-border/50">
+                                    <div className="space-y-3 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                                         <div>
-                                            <label className="block text-sm text-muted mb-1">Current Password</label>
+                                            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Current Password</label>
                                             <input
                                                 type="password"
                                                 value={currentPassword}
                                                 onChange={(e) => setCurrentPassword(e.target.value)}
-                                                className="w-full p-3 bg-black/30 rounded-lg border border-indigo-500/30 text-white focus:outline-none focus:border-indigo-500"
+                                                className="w-full p-2.5 bg-white rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:border-indigo-600"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm text-muted mb-1">New Password</label>
+                                            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">New Password</label>
                                             <input
                                                 type="password"
                                                 value={newPassword}
                                                 onChange={(e) => setNewPassword(e.target.value)}
-                                                className="w-full p-3 bg-black/30 rounded-lg border border-indigo-500/30 text-white focus:outline-none focus:border-indigo-500"
+                                                className="w-full p-2.5 bg-white rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:border-indigo-600"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm text-muted mb-1">Confirm New Password</label>
+                                            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Confirm New Password</label>
                                             <input
                                                 type="password"
                                                 value={confirmPassword}
                                                 onChange={(e) => setConfirmPassword(e.target.value)}
-                                                className="w-full p-3 bg-black/30 rounded-lg border border-indigo-500/30 text-white focus:outline-none focus:border-indigo-500"
+                                                className="w-full p-2.5 bg-white rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:border-indigo-600"
                                             />
                                         </div>
                                         <button
                                             onClick={handleChangePassword}
                                             disabled={changingPassword}
-                                            className="btn-primary w-full flex justify-center mt-4"
+                                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm transition-colors mt-2"
                                         >
                                             {changingPassword ? "Updating..." : "Update Password"}
                                         </button>
                                     </div>
                                 )}
 
-                                <div className="mt-8 p-6 bg-red-500/10 rounded-xl border border-red-500/30 text-center">
-                                    <h4 className="text-lg font-bold text-red-500 mb-2">Danger Zone</h4>
-                                    <p className="text-sm text-muted mb-6">
-                                        Once you delete your account, there is no going back. Please be certain.
+                                <div className="mt-6 p-5 bg-red-50 rounded-xl border border-red-200 text-center">
+                                    <h4 className="text-base font-bold text-red-700 mb-1">Danger Zone</h4>
+                                    <p className="text-xs text-gray-600 mb-4">
+                                        Once you delete your account, there is no going back.
                                     </p>
                                     <button
                                         onClick={handleDeleteAccount}
-                                        className="btn bg-red-600 text-white hover:bg-red-700 w-full sm:w-auto px-8"
+                                        className="px-6 py-2 bg-red-600 text-white font-semibold rounded-lg text-xs hover:bg-red-700 transition-colors"
                                     >
                                         Delete Account
                                     </button>

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useDriver } from "../../context/DriverContext";
 import Link from "next/link";
+import { Activity, Truck, Package, Bell, MapPin, Check, X, ArrowRight, Clock } from "lucide-react";
 
 interface ActiveDelivery {
     _id: string;
@@ -21,12 +22,6 @@ interface PendingRequest {
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
-
-const STATUS_COLORS: Record<string, string> = {
-    offline: "#64748b",
-    online: "#22c55e",
-    busy: "#fb923c",
-};
 
 export default function DriverDashboard() {
     const { driver, fetchWithAuth, token, loading: ctxLoading } = useDriver();
@@ -51,7 +46,6 @@ export default function DriverDashboard() {
         if (driver) {
             loadActiveDelivery();
         } else if (!ctxLoading) {
-            // Context finished loading but no driver — stop spinner
             setLoadingDelivery(false);
         }
     }, [driver, ctxLoading]);
@@ -59,7 +53,6 @@ export default function DriverDashboard() {
     // Listen for real-time delivery assigned via Socket.io
     useEffect(() => {
         const handler = (e: any) => {
-            // Try to get the shipment data from the custom event
             const data = (e as CustomEvent).detail || {};
             setPendingRequest({
                 shipmentId: data.shipmentId,
@@ -72,7 +65,7 @@ export default function DriverDashboard() {
         return () => window.removeEventListener("deliveryAssigned", handler as EventListener);
     }, []);
 
-    // Share live location when driver is online (waiting or delivering)
+    // Share live location when driver is online
     useEffect(() => {
         if (!token || !driver || (driver.status !== "online" && driver.status !== "busy")) return;
 
@@ -87,7 +80,7 @@ export default function DriverDashboard() {
         if ("geolocation" in navigator) {
             locationWatchRef.current = navigator.geolocation.watchPosition(
                 pos => shareLocation(pos.coords.latitude, pos.coords.longitude),
-                () => { }, // ignore errors silently
+                () => { },
                 { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
             );
         }
@@ -132,155 +125,159 @@ export default function DriverDashboard() {
         }
     };
 
-    // While context is still hydrating from localStorage, show a spinner
     if (ctxLoading) {
         return (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "80vh" }}>
-                <p style={{ color: "#94a3b8" }}>Loading...</p>
+            <div className="flex items-center justify-center min-h-[80vh] bg-white">
+                <p className="text-gray-500 text-xs">Loading dashboard...</p>
             </div>
         );
     }
 
-    const statusColor = STATUS_COLORS[driver?.status || "offline"];
+    const isOnline = driver?.status === "online" || driver?.status === "busy";
 
     return (
-        <div style={{ maxWidth: "1000px", margin: "0 auto", padding: "40px 24px" }}>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 bg-white min-h-[85vh]">
             {/* Header */}
-            <div style={{ marginBottom: "32px" }}>
-                <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#fff", margin: "0 0 6px" }}>
-                    Good day, {driver?.name.split(" ")[0]} 👋
-                </h1>
-                <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>
-                    Your delivery dashboard •{" "}
-                    <span style={{ color: statusColor, fontWeight: 600 }}>
+            <div className="mb-8 pb-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                        Driver Dashboard
+                    </h1>
+                    <p className="text-xs text-gray-500">
+                        Welcome back, {driver?.name}
+                    </p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span
+                        className={`text-xs px-3 py-1 rounded-full font-semibold border ${
+                            isOnline
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-gray-100 text-gray-600 border-gray-200"
+                        }`}
+                    >
                         {driver?.status?.toUpperCase() || "OFFLINE"}
                     </span>
-                </p>
+                </div>
             </div>
 
             {/* Stats row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "28px" }}>
-                {[
-                    { label: "Status", value: driver?.status?.toUpperCase() || "—", icon: "🔄", color: statusColor },
-                    { label: "Vehicle", value: `${driver?.vehicleType || "—"} · ${driver?.vehicleNumber || "—"}`, icon: "🏍️", color: "#fb923c" },
-                    { label: "Active", value: activeDelivery ? "1 delivery" : "No delivery", icon: "📦", color: activeDelivery ? "#fb923c" : "#64748b" },
-                ].map(({ label, value, icon, color }) => (
-                    <div key={label} style={{
-                        background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: "14px", padding: "20px",
-                    }}>
-                        <p style={{ fontSize: "12px", color: "#64748b", margin: "0 0 8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{icon} {label}</p>
-                        <p style={{ fontSize: "18px", fontWeight: 700, color, margin: 0 }}>{value}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2">
+                        <Activity className="w-4 h-4 text-indigo-600" />
+                        <span>Status</span>
                     </div>
-                ))}
+                    <p className="text-lg font-bold text-gray-900 capitalize">{driver?.status || "Offline"}</p>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2">
+                        <Truck className="w-4 h-4 text-indigo-600" />
+                        <span>Vehicle</span>
+                    </div>
+                    <p className="text-lg font-bold text-gray-900 truncate">
+                        {driver?.vehicleType || "—"} · {driver?.vehicleNumber || "—"}
+                    </p>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2">
+                        <Package className="w-4 h-4 text-indigo-600" />
+                        <span>Active Delivery</span>
+                    </div>
+                    <p className="text-lg font-bold text-gray-900">
+                        {activeDelivery ? "1 Delivery" : "None"}
+                    </p>
+                </div>
             </div>
 
-            {/* ── Pickup Request Card (new delivery assigned, driver must accept/reject) */}
+            {/* ── Pickup Request Card ── */}
             {pendingRequest && (
-                <div style={{
-                    marginBottom: "24px",
-                    background: "linear-gradient(135deg, rgba(251,146,60,0.12), rgba(249,115,22,0.05))",
-                    border: "2px solid rgba(251,146,60,0.45)",
-                    borderRadius: "18px", padding: "24px",
-                    animation: "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite",
-                }}>
-                    <style>{`@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(251,146,60,0.3)} 50%{box-shadow:0 0 0 12px rgba(251,146,60,0)} }`}</style>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <span style={{ fontSize: "28px" }}>🔔</span>
-                            <div>
-                                <p style={{ margin: "0 0 2px", fontWeight: 700, color: "#fb923c", fontSize: "16px" }}>New Pickup Request!</p>
-                                <p style={{ margin: 0, fontSize: "12px", color: "#94a3b8", fontFamily: "monospace" }}>{pendingRequest.trackingCode}</p>
-                            </div>
+                <div className="mb-8 bg-amber-50 border border-amber-300 rounded-xl p-5 shadow-xs">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                            <Bell className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <p className="font-bold text-amber-900 text-sm">New Delivery Request</p>
+                            <p className="font-mono text-xs text-amber-700">{pendingRequest.trackingCode}</p>
                         </div>
                     </div>
-                    <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "10px", padding: "14px", marginBottom: "16px" }}>
-                        <p style={{ margin: "0 0 4px", fontSize: "12px", color: "#64748b", textTransform: "uppercase" }}>📍 Delivery To</p>
-                        <p style={{ margin: 0, color: "#e2e8f0", fontSize: "14px", fontWeight: 500 }}>
+                    <div className="bg-white border border-amber-200 rounded-lg p-3.5 mb-4 text-xs text-gray-700">
+                        <p className="font-semibold text-gray-900 mb-1 flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Destination Address</span>
+                        </p>
+                        <p>
                             {pendingRequest.deliveryAddress?.street}<br />
-                            <span style={{ color: "#94a3b8", fontSize: "13px" }}>
-                                {pendingRequest.deliveryAddress?.city}, {pendingRequest.deliveryAddress?.state} {pendingRequest.deliveryAddress?.zip}
-                            </span>
+                            {pendingRequest.deliveryAddress?.city}, {pendingRequest.deliveryAddress?.state} {pendingRequest.deliveryAddress?.zip}
                         </p>
                     </div>
-                    <div style={{ display: "flex", gap: "10px" }}>
+                    <div className="flex gap-3">
                         <button
                             onClick={handleAccept}
                             disabled={responding}
-                            style={{
-                                flex: 1, padding: "13px", background: "linear-gradient(135deg, #22c55e, #16a34a)",
-                                color: "#fff", border: "none", borderRadius: "10px", fontWeight: 700, fontSize: "15px",
-                                cursor: "pointer", opacity: responding ? 0.7 : 1,
-                            }}
+                            className="flex-1 py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
-                            {responding ? "..." : "✓ Accept Delivery"}
+                            <Check className="w-4 h-4" />
+                            <span>{responding ? "Processing…" : "Accept Delivery"}</span>
                         </button>
                         <button
                             onClick={handleReject}
                             disabled={responding}
-                            style={{
-                                flex: 1, padding: "13px", background: "rgba(239,68,68,0.15)",
-                                color: "#f87171", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "10px",
-                                fontWeight: 700, fontSize: "15px", cursor: "pointer", opacity: responding ? 0.7 : 1,
-                            }}
+                            className="flex-1 py-2 px-4 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
-                            {responding ? "..." : "✗ Reject"}
+                            <X className="w-4 h-4" />
+                            <span>{responding ? "Processing…" : "Decline"}</span>
                         </button>
                     </div>
                 </div>
             )}
 
             {/* Active delivery card */}
-            <h2 style={{ fontSize: "18px", fontWeight: 600, color: "#e2e8f0", marginBottom: "16px" }}>Active Delivery</h2>
+            <h2 className="text-base font-bold text-gray-900 mb-4">Current Delivery</h2>
             {loadingDelivery ? (
-                <div style={{ height: "120px", background: "rgba(255,255,255,0.03)", borderRadius: "14px" }} />
+                <div className="h-28 bg-gray-50 border border-gray-200 rounded-xl animate-pulse" />
             ) : activeDelivery ? (
-                <div style={{
-                    background: "linear-gradient(135deg, rgba(251,146,60,0.07), rgba(19,19,31,0.95))",
-                    border: "1px solid rgba(251,146,60,0.25)", borderRadius: "16px", padding: "24px",
-                }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs">
+                    <div className="flex justify-between items-start mb-4 pb-3 border-b border-gray-100 flex-wrap gap-2">
                         <div>
-                            <p style={{ margin: "0 0 4px", color: "#94a3b8", fontSize: "12px", textTransform: "uppercase" }}>Tracking Code</p>
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                                <p style={{ margin: 0, fontWeight: 700, color: "#fb923c", fontFamily: "monospace", fontSize: "18px" }}>{activeDelivery.trackingCode}</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1 font-semibold">Tracking Code</p>
+                            <div className="flex items-center gap-2">
+                                <span className="font-mono text-base font-bold text-gray-900">{activeDelivery.trackingCode}</span>
                                 {activeDelivery.order_id && (
-                                    <span style={{ fontSize: "12px", color: "#64748b", fontFamily: "monospace", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
-                                        Order #{activeDelivery.order_id._id.slice(-10).toUpperCase()}
+                                    <span className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">
+                                        Order #{activeDelivery.order_id._id.slice(-8).toUpperCase()}
                                     </span>
                                 )}
                             </div>
                         </div>
-                        <span style={{
-                            padding: "4px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: 600,
-                            background: "rgba(251,146,60,0.15)", color: "#fb923c",
-                            border: "1px solid rgba(251,146,60,0.3)",
-                        }}>
-                            {activeDelivery.status.replace(/_/g, " ").toUpperCase()}
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase">
+                            {activeDelivery.status.replace(/_/g, " ")}
                         </span>
                     </div>
-                    <p style={{ margin: "0 0 8px", color: "#94a3b8", fontSize: "12px" }}>📡 Sharing your live location with customer</p>
-                    <p style={{ margin: "0 0 16px", color: "#e2e8f0", fontSize: "14px" }}>
-                        📍 {activeDelivery.deliveryAddress.street}, {activeDelivery.deliveryAddress.city}
-                    </p>
-                    <Link href={`/driver/delivery/${activeDelivery._id}`} style={{
-                        display: "inline-block", padding: "10px 20px",
-                        background: "linear-gradient(135deg, #f97316, #ea580c)",
-                        color: "#fff", borderRadius: "10px", fontWeight: 600, fontSize: "14px",
-                        textDecoration: "none",
-                    }}>
-                        View & Update Delivery →
+
+                    <div className="space-y-1 text-xs text-gray-600 mb-5">
+                        <p className="flex items-center gap-1.5 text-gray-900 font-medium">
+                            <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{activeDelivery.deliveryAddress.street}, {activeDelivery.deliveryAddress.city}</span>
+                        </p>
+                        <p className="text-gray-500 pl-5">Sharing real-time location with recipient</p>
+                    </div>
+
+                    <Link
+                        href={`/driver/delivery/${activeDelivery._id}`}
+                        className="inline-flex items-center gap-1.5 py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                        <span>View & Update Delivery</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                     </Link>
                 </div>
             ) : (
-                <div style={{
-                    padding: "40px", textAlign: "center",
-                    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
-                    borderRadius: "16px",
-                }}>
-                    <p style={{ fontSize: "40px", margin: "0 0 12px" }}>😴</p>
-                    <p style={{ color: "#94a3b8", margin: 0 }}>
-                        {driver?.status === "online" ? "Waiting for a delivery to be assigned to you..." : "Go online to start receiving deliveries"}
+                <div className="p-12 text-center bg-white border border-gray-200 rounded-xl">
+                    <Clock className="w-10 h-10 text-gray-300 mx-auto mb-3 stroke-1" />
+                    <p className="text-xs text-gray-500">
+                        {isOnline ? "Waiting for a delivery to be dispatched..." : "Turn status to Online above to receive delivery requests"}
                     </p>
                 </div>
             )}

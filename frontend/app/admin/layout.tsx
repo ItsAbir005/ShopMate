@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-
-// Admin uses the same JWT as customer (role: 'admin'), stored as adminToken
-// Falls back to customer token for backwards compat with existing admin/products page
+import { ShieldCheck, LayoutDashboard, Package, Tag, Truck, Bell, User, LogOut } from "lucide-react";
 
 function AdminNav() {
     const pathname = usePathname();
@@ -36,7 +34,6 @@ function AdminNav() {
             setAdminName(JSON.parse(profile).name?.split(" ")[0] || "Admin");
         }
         fetchNotifications();
-        // Poll for notifications every 30s
         const interval = setInterval(fetchNotifications, 30000);
         return () => clearInterval(interval);
     }, []);
@@ -48,74 +45,66 @@ function AdminNav() {
     };
 
     const links = [
-        { href: "/admin", label: "Dashboard", icon: "📊" },
-        { href: "/admin/products", label: "Products", icon: "📦" },
-        { href: "/admin/listings", label: "Listings", icon: "🏷️" },
-        { href: "/admin/drivers", label: "Drivers", icon: "🚚" },
+        { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/admin/products", label: "Products", icon: Package },
+        { href: "/admin/listings", label: "Listings", icon: Tag },
+        { href: "/admin/drivers", label: "Drivers", icon: Truck },
     ];
 
     return (
-        <nav style={{
-            position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-            background: "linear-gradient(135deg, rgba(8,8,20,0.97), rgba(15,12,35,0.95))",
-            borderBottom: "1px solid rgba(99,102,241,0.2)",
-            backdropFilter: "blur(20px)",
-        }}>
-            <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "0 24px", height: "64px", display: "flex", alignItems: "center", gap: "32px" }}>
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
                 {/* Logo */}
-                <Link href="/admin" style={{ display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", flexShrink: 0 }}>
-                    <span style={{ fontSize: "20px" }}>🛡️</span>
-                    <span style={{ fontSize: "16px", fontWeight: 700, background: "linear-gradient(135deg, #818cf8, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                        Aura Admin
-                    </span>
+                <Link href="/admin" className="flex items-center gap-2 text-gray-900 font-bold text-lg flex-shrink-0">
+                    <ShieldCheck className="w-6 h-6 text-indigo-600" />
+                    <span>ShopMate Admin</span>
                 </Link>
 
                 {/* Nav links */}
-                <div style={{ display: "flex", gap: "6px", flex: 1 }}>
-                    {links.map(({ href, label, icon }) => {
+                <div className="flex items-center gap-1 sm:gap-2 flex-1 max-w-xl">
+                    {links.map(({ href, label, icon: Icon }) => {
                         const active = pathname === href || (href !== "/admin" && pathname.startsWith(href));
                         return (
-                            <Link key={href} href={href} style={{
-                                padding: "6px 14px", borderRadius: "8px", fontSize: "14px", textDecoration: "none",
-                                fontWeight: active ? 600 : 400,
-                                background: active ? "rgba(99,102,241,0.15)" : "transparent",
-                                color: active ? "#818cf8" : "#94a3b8",
-                                border: active ? "1px solid rgba(99,102,241,0.25)" : "1px solid transparent",
-                                transition: "all 0.15s",
-                            }}>
-                                {icon} {label}
+                            <Link
+                                key={href}
+                                href={href}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    active
+                                        ? "bg-indigo-50 text-indigo-600 border border-indigo-100"
+                                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent"
+                                }`}
+                            >
+                                <Icon className="w-4 h-4" />
+                                <span className="hidden sm:inline">{label}</span>
                             </Link>
                         );
                     })}
                 </div>
 
                 {/* Admin info + logout */}
-                <div style={{ display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
-                    {/* Notification Bell */}
-                    <Link href="/admin/notifications" style={{ textDecoration: "none", position: "relative" }}>
-                        <span style={{ fontSize: "20px" }}>🔔</span>
+                <div className="flex items-center gap-4 flex-shrink-0">
+                    <Link href="/admin/notifications" className="relative p-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">
+                        <Bell className="w-5 h-5" />
                         {unreadCount > 0 && (
-                            <span style={{
-                                position: "absolute", top: "-4px", right: "-4px",
-                                background: "#ef4444", color: "white",
-                                fontSize: "10px", fontWeight: "bold",
-                                borderRadius: "50%", padding: "2px 5px",
-                            }}>
+                            <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
                                 {unreadCount}
                             </span>
                         )}
                     </Link>
 
                     {adminName && (
-                        <span style={{ fontSize: "13px", color: "#818cf8", fontWeight: 600 }}>
-                            👤 {adminName}
-                        </span>
+                        <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                            <User className="w-3.5 h-3.5" />
+                            <span>{adminName}</span>
+                        </div>
                     )}
-                    <button onClick={handleLogout} style={{
-                        padding: "6px 14px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)",
-                        background: "rgba(255,255,255,0.04)", color: "#94a3b8", fontSize: "13px", cursor: "pointer",
-                    }}>
-                        Logout
+
+                    <button
+                        onClick={handleLogout}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-medium hover:text-gray-900 hover:bg-gray-50 transition-colors"
+                    >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Logout</span>
                     </button>
                 </div>
             </div>
@@ -134,7 +123,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             if (!adminToken) {
                 router.push("/admin/login");
             } else {
-                // Auto-sync token for existing sessions so they don't have to log out
                 if (!localStorage.getItem("token")) {
                     localStorage.setItem("token", adminToken);
                 }
@@ -145,14 +133,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (isAuthPage) return <>{children}</>;
 
     return (
-        <>
+        <div className="min-h-screen bg-white">
             <AdminNav />
-            <main style={{
-                paddingTop: "64px", minHeight: "100vh",
-                background: "radial-gradient(ellipse at top, rgba(99,102,241,0.05) 0%, #0a0a0f 60%)",
-            }}>
+            <main className="pt-16 min-h-screen bg-white">
                 {children}
             </main>
-        </>
+        </div>
     );
 }

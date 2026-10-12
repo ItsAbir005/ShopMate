@@ -58,9 +58,7 @@ export function DriverProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!token) { setSocket(null); return; }
         const s = io(SOCKET_URL, { auth: { token } });
-        s.on("connect", () => console.log("🔌 Driver socket connected"));
         s.on("delivery:assigned", (data: any) => {
-            console.log("📦 New delivery assigned:", data);
             // Store in localStorage so dashboard can refresh
             localStorage.setItem("pendingDelivery", JSON.stringify(data));
             // Dispatch a CustomEvent so dashboard can read the shipment details

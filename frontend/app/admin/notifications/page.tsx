@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Bell, CheckCircle, XCircle, Truck, Car, Bike, Inbox, Check } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
@@ -23,10 +24,6 @@ interface Notification {
     createdAt: string;
     metadata?: DriverMeta;
 }
-
-const VEHICLE_ICONS: Record<string, string> = {
-    bike: "🏍️", car: "🚗", van: "🚐", truck: "🚛"
-};
 
 export default function NotificationsPage() {
     const router = useRouter();
@@ -104,139 +101,125 @@ export default function NotificationsPage() {
     const unreadCount = notifications.filter(n => !n.isRead).length;
 
     return (
-        <div style={{ maxWidth: "900px", margin: "0 auto", padding: "40px 24px", position: "relative" }}>
-
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 bg-white min-h-screen">
             {/* Toast */}
             {toast && (
-                <div style={{
-                    position: "fixed", top: "80px", right: "24px", zIndex: 9999,
-                    padding: "14px 20px", borderRadius: "12px", fontSize: "14px", fontWeight: 500,
-                    background: toast.type === "success" ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-                    border: `1px solid ${toast.type === "success" ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)"}`,
-                    color: toast.type === "success" ? "#4ade80" : "#f87171",
-                    backdropFilter: "blur(10px)",
-                }}>
-                    {toast.type === "success" ? "✅" : "❌"} {toast.msg}
+                <div className={`fixed top-20 right-6 z-50 px-5 py-3 rounded-xl text-sm font-semibold shadow-lg ${
+                    toast.type === "error" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
+                }`}>
+                    {toast.msg}
                 </div>
             )}
 
             {/* Header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
+            <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h1 style={{ fontSize: "28px", fontWeight: 700, color: "#fff", margin: "0 0 4px" }}>
-                        Notifications
+                    <div className="flex items-center gap-2">
+                        <Bell className="w-7 h-7 text-indigo-600" />
+                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                            Notifications
+                        </h1>
                         {unreadCount > 0 && (
-                            <span style={{ marginLeft: "10px", background: "#ef4444", color: "#fff", fontSize: "13px", padding: "2px 8px", borderRadius: "999px" }}>
+                            <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
                                 {unreadCount} new
                             </span>
                         )}
-                    </h1>
-                    <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>Review pending driver registrations and other alerts.</p>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">Review pending driver registrations and other alerts.</p>
                 </div>
                 {unreadCount > 0 && (
-                    <button onClick={handleMarkAllRead} style={{
-                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                        color: "#e2e8f0", padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontSize: "13px"
-                    }}>
+                    <button
+                        onClick={handleMarkAllRead}
+                        className="px-3.5 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-semibold transition-colors"
+                    >
                         Mark All as Read
                     </button>
                 )}
             </div>
 
             {loading ? (
-                <div style={{ padding: "60px", color: "#94a3b8", textAlign: "center" }}>Loading notifications...</div>
+                <div className="py-16 text-gray-500 text-center text-sm">Loading notifications...</div>
             ) : notifications.length === 0 ? (
-                <div style={{ padding: "60px", textAlign: "center", color: "#64748b", background: "rgba(255,255,255,0.02)", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                    <div style={{ fontSize: "48px", marginBottom: "12px" }}>📭</div>
-                    <p style={{ margin: 0, fontWeight: 500 }}>You're all caught up!</p>
-                    <p style={{ margin: "4px 0 0", fontSize: "13px" }}>No notifications at this time.</p>
+                <div className="py-16 text-center bg-white border border-gray-200 rounded-2xl max-w-md mx-auto">
+                    <Inbox className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="font-bold text-gray-900 text-base">You're all caught up!</p>
+                    <p className="text-xs text-gray-500 mt-1">No notifications at this time.</p>
                 </div>
             ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div className="space-y-4">
                     {notifications.map(notif => {
                         const meta = notif.metadata as DriverMeta | undefined;
                         const isDriverNotif = notif.type === "DRIVER_REGISTRATION";
-                        const vehicleIcon = meta ? (VEHICLE_ICONS[meta.vehicleType] || "🚗") : "🚗";
 
                         return (
-                            <div key={notif._id} style={{
-                                background: notif.isRead ? "rgba(255,255,255,0.02)" : "rgba(99,102,241,0.06)",
-                                border: `1px solid ${notif.isRead ? "rgba(255,255,255,0.06)" : "rgba(99,102,241,0.3)"}`,
-                                borderRadius: "14px", padding: "20px 22px", transition: "all 0.2s",
-                            }}>
-                                {/* Top row: type badge + timestamp + unread dot */}
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                        {!notif.isRead && <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ef4444", flexShrink: 0 }} />}
+                            <div
+                                key={notif._id}
+                                className={`rounded-xl p-5 border transition-all ${
+                                    notif.isRead
+                                        ? "bg-white border-gray-200"
+                                        : "bg-indigo-50/40 border-indigo-200"
+                                }`}
+                            >
+                                {/* Top row */}
+                                <div className="flex justify-between items-center mb-3">
+                                    <div className="flex items-center gap-2">
+                                        {!notif.isRead && <div className="w-2 h-2 rounded-full bg-red-500" />}
                                         {isDriverNotif && (
-                                            <span style={{ padding: "2px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: "rgba(99,102,241,0.15)", color: "#818cf8", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
                                                 Driver Registration
                                             </span>
                                         )}
                                     </div>
-                                    <span style={{ fontSize: "12px", color: "#64748b" }}>
-                                        {new Date(notif.createdAt).toLocaleString("en-IN")}
+                                    <span className="text-xs text-gray-500">
+                                        {new Date(notif.createdAt).toLocaleString("en-US")}
                                     </span>
                                 </div>
 
-                                {/* Driver details card */}
+                                {/* Driver details */}
                                 {isDriverNotif && meta ? (
-                                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                                            {/* Avatar */}
-                                            <div style={{
-                                                width: "48px", height: "48px", borderRadius: "50%",
-                                                background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-                                                display: "flex", alignItems: "center", justifyContent: "center",
-                                                fontSize: "20px", fontWeight: 700, color: "#fff", flexShrink: 0,
-                                            }}>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-bold text-sm flex items-center justify-center flex-shrink-0">
                                                 {meta.name?.[0]?.toUpperCase() || "D"}
                                             </div>
                                             <div>
-                                                <p style={{ margin: "0 0 3px", fontWeight: 700, color: "#fff", fontSize: "16px" }}>{meta.name}</p>
-                                                <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>{meta.email} · {meta.phone}</p>
+                                                <p className="font-bold text-gray-900 text-sm">{meta.name}</p>
+                                                <p className="text-xs text-gray-500">{meta.email} · {meta.phone}</p>
                                             </div>
                                         </div>
                                         {/* Vehicle info */}
-                                        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                                            <span style={{ padding: "4px 12px", background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.2)", borderRadius: "8px", fontSize: "12px", color: "#fb923c" }}>
-                                                {vehicleIcon} {meta.vehicleType?.toUpperCase()}
+                                        <div className="flex gap-2 flex-wrap text-xs">
+                                            <span className="px-2.5 py-1 bg-gray-100 border border-gray-200 rounded-md font-medium text-gray-700">
+                                                {meta.vehicleType?.toUpperCase()}
                                             </span>
-                                            <span style={{ padding: "4px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "12px", color: "#e2e8f0", fontFamily: "monospace" }}>
+                                            <span className="px-2.5 py-1 bg-gray-100 border border-gray-200 rounded-md font-mono text-gray-700">
                                                 {meta.vehicleNumber}
                                             </span>
-                                            <span style={{ padding: "4px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "12px", color: "#94a3b8" }}>
-                                                🪪 {meta.licenseNumber}
+                                            <span className="px-2.5 py-1 bg-gray-100 border border-gray-200 rounded-md text-gray-600">
+                                                Lic: {meta.licenseNumber}
                                             </span>
                                         </div>
                                     </div>
                                 ) : (
-                                    <p style={{ margin: 0, fontSize: "14px", color: "#e2e8f0" }}>{notif.message}</p>
+                                    <p className="text-sm text-gray-800">{notif.message}</p>
                                 )}
 
                                 {/* Action */}
                                 {isDriverNotif && !notif.isRead && (
-                                    <div style={{ marginTop: "14px", display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                                    <div className="mt-4 flex justify-end">
                                         <button
                                             onClick={() => handleApproveDriver(notif.relatedId)}
                                             disabled={approving === notif.relatedId}
-                                            style={{
-                                                background: approving === notif.relatedId ? "rgba(34,197,94,0.4)" : "rgba(34,197,94,0.9)",
-                                                color: "#fff", border: "none", padding: "9px 22px",
-                                                borderRadius: "9px", fontSize: "13px", fontWeight: 700,
-                                                cursor: approving === notif.relatedId ? "not-allowed" : "pointer",
-                                                transition: "all 0.2s",
-                                            }}
+                                            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors disabled:opacity-50"
                                         >
-                                            {approving === notif.relatedId ? "Approving..." : "✓ Approve Driver"}
+                                            {approving === notif.relatedId ? "Approving..." : "Approve Driver"}
                                         </button>
                                     </div>
                                 )}
 
-                                {/* Already approved badge */}
                                 {isDriverNotif && notif.isRead && (
-                                    <p style={{ marginTop: "10px", fontSize: "12px", color: "#22c55e", display: "flex", alignItems: "center", gap: "4px" }}>
-                                        ✓ Approved
+                                    <p className="mt-3 text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                                        <Check className="w-3.5 h-3.5" /> Approved
                                     </p>
                                 )}
                             </div>
