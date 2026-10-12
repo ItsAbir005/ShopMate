@@ -1,22 +1,27 @@
 import { Router } from 'express';
-import { initializePayment, webhook, refund, verifyPayment } from './payment.controller';
+import {
+    createPayPalOrder,
+    capturePayPalOrder,
+    paypalWebhook,
+    refundPayPalOrder
+} from './payment.controller';
+import { authMiddleware } from '../../middleware/auth.middleware';
+import { adminMiddleware } from '../../middleware/admin.middleware';
 
 const router = Router();
 
-// Endpoint to initialize payment
-// POST /api/payments/
-router.post('/', initializePayment);
+// ─── PayPal Endpoints ─────────────────────────────────────────────────────────
 
-// Endpoint for Stripe webhooks (body must remain raw)
-// POST /api/payments/webhook
-router.post('/webhook', webhook);
+// POST /api/payment/paypal/create-order (Auth required)
+router.post('/paypal/create-order', authMiddleware, createPayPalOrder);
 
-// Endpoint to trigger a manual refund
-// POST /api/payments/refund/:payment_id
-router.post('/refund/:payment_id', refund);
+// POST /api/payment/paypal/capture (Auth required)
+router.post('/paypal/capture', authMiddleware, capturePayPalOrder);
 
-// Endpoint to verify payment status manually (fallback for webhooks in dev)
-// GET /api/payments/verify/:order_id
-router.get('/verify/:order_id', verifyPayment);
+// POST /api/payment/paypal/webhook (NO auth, raw body)
+router.post('/paypal/webhook', paypalWebhook);
+
+// POST /api/payment/paypal/refund/:orderId (Admin only)
+router.post('/paypal/refund/:orderId', authMiddleware, adminMiddleware, refundPayPalOrder);
 
 export default router;

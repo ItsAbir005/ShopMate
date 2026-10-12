@@ -1,101 +1,116 @@
 import { Request, Response } from 'express';
 import { PaymentService } from './payment.service';
-import { Order } from '../../models/Order';
+import { AuthRequest } from '../../middleware/auth.middleware';
+import { logger } from '../../utils/logger';
 
-export const initializePayment = async (req: Request, res: Response): Promise<void> => {
+// ─── PayPal Endpoints ─────────────────────────────────────────────────────────
+
+/**
+ * POST /api/payment/paypal/create-order (Auth required)
+ * Loads order from DB and computes amount ON SERVER.
+ */
+export const createPayPalOrder = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { order_id } = req.body;
-        if (!order_id) {
-            res.status(400).json({ success: false, message: 'order_id is required' });
+        const { orderId, order_id } = req.body;
+        const targetOrderId = orderId || order_id;
+
+        if (!targetOrderId) {
+            res.status(400).json({ success: false, message: 'orderId is required' });
             return;
         }
 
-        const order = await Order.findById(order_id);
-        if (!order) {
-            res.status(404).json({ success: false, message: 'Order not found' });
-            return;
-        }
+        const userId = req.user?._id?.toString() || '';
+        const isAdmin = req.user?.role === 'admin';
 
-        if (order.payment_status === 'paid') {
-            res.status(400).json({ success: false, message: 'Order is already paid' });
-            return;
-        }
-
-        const session = await PaymentService.createCheckoutSession(
-            order._id.toString(),
-            order.total_amount,
-            'usd' // You can make this dynamic if needed
-        );
+        const result = await PaymentService.createPayPalOrder(targetOrderId, userId, isAdmin);
 
         res.status(200).json({
             success: true,
-            checkout_url: session.url,
-            session_id: session.id,
-        });
-
-    } catch (error: any) {
-        console.error('Payment initialization error:', error);
-        res.status(500).json({ success: false, message: error.message || 'Internal server error' });
-    }
-};
-
-export const webhook = async (req: Request, res: Response): Promise<void> => {
-    const signature = req.headers['stripe-signature'] as string;
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-    if (!webhookSecret) {
-        console.error('Stripe webhook secret is not set.');
-        res.status(500).send('Webhook secret not configured in the environment.');
-        return;
-    }
-
-    if (!signature) {
-        res.status(400).send('No signature found in headers.');
-        return;
-    }
-
-    try {
-        // Express must be configured to pass the raw body to this endpoint
-        await PaymentService.handleWebhookEvent(req.body, signature, webhookSecret);
-        res.status(200).json({ received: true });
-    } catch (err: any) {
-        console.error('Webhook processing failed:', err.message);
-        res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-};
-
-export const refund = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const payment_id = req.params.payment_id as string;
-        const refundResult = await PaymentService.processRefund(payment_id);
-
-        res.status(200).json({
-            success: true,
-            message: 'Refund processed successfully',
-            data: refundResult,
+            paypalOrderId: result.paypalOrderId,
         });
     } catch (error: any) {
-        console.error('Refund error:', error);
-        res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+        logger.error({ err: error.message }, 'PayPal create order controller error');
+        res.status(error.message.includes('Unauthorized') ? 403 : 400).json({
+            success: false,
+            message: error.message || 'Failed to create PayPal order',
+        });
     }
 };
 
-export const verifyPayment = async (req: Request, res: Response): Promise<void> => {
+/**
+ * POST /api/payment/paypal/capture (Auth required)
+ * Captures PayPal order and updates order status to paid. Idempotent.
+ */
+export const capturePayPalOrder = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const order_id = req.params.order_id as string;
-        if (!order_id) {
-            res.status(400).json({ success: false, message: 'order_id is required' });
+        const { paypalOrderId } = req.body;
+
+        if (!paypalOrderId) {
+            res.status(400).json({ success: false, message: 'paypalOrderId is required' });
             return;
         }
 
-        const result = await PaymentService.verifyPaymentStatus(order_id);
+        const userId = req.user?._id?.toString() || '';
+        const isAdmin = req.user?.role === 'admin';
+
+        const result = await PaymentService.capturePayPalOrder(paypalOrderId, userId, isAdmin);
+
         res.status(200).json({
             success: true,
-            message: 'Payment status verified',
+            orderId: result.orderId,
+            status: result.status,
+            captureId: result.captureId,
+            alreadyPaid: result.alreadyPaid,
+        });
+    } catch (error: any) {
+        logger.error({ err: error.message }, 'PayPal capture controller error');
+        res.status(error.message.includes('Unauthorized') ? 403 : 400).json({
+            success: false,
+            message: error.message || 'Failed to capture PayPal order',
+        });
+    }
+};
+
+/**
+ * POST /api/payment/paypal/webhook (Public, raw body)
+ * Verifies PayPal signature and handles completed/denied/refunded events.
+ */
+export const paypalWebhook = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const result = await PaymentService.handlePayPalWebhook(req.headers, req.body);
+        res.status(200).json(result);
+    } catch (error: any) {
+        logger.error({ err: error.message }, 'PayPal webhook controller error');
+        res.status(400).json({ success: false, message: error.message || 'Webhook verification failed' });
+    }
+};
+
+/**
+ * POST /api/payment/paypal/refund/:orderId (Admin only)
+ * Initiates capture refund via PayPal REST Orders/Payments v2.
+ */
+export const refundPayPalOrder = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { orderId } = req.params;
+        const { amount } = req.body;
+
+        if (!orderId) {
+            res.status(400).json({ success: false, message: 'orderId is required' });
+            return;
+        }
+
+        const result = await PaymentService.processPayPalRefund(orderId, amount ? Number(amount) : undefined);
+
+        res.status(200).json({
+            success: true,
+            message: 'PayPal refund processed successfully',
             data: result,
         });
     } catch (error: any) {
-        console.error('Payment verification error:', error);
-        res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+        logger.error({ err: error.message }, 'PayPal admin refund controller error');
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to process PayPal refund',
+        });
     }
 };

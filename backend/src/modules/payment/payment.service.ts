@@ -1,200 +1,305 @@
-import Stripe from 'stripe';
 import { Payment } from '../../models/Payment';
 import { Order } from '../../models/Order';
 import { rabbitMQ } from '../../config/rabbitmq';
+import { PayPalProvider, PayPalWebhookEventResource } from './providers/paypal.provider';
+import { logger } from '../../utils/logger';
 
-// Ensure STRIPE_SECRET_KEY is populated in production
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
-    // Explicitly cast to any to avoid version mismatch errors in different TS environments
-    apiVersion: '2025-02-24.acacia' as any,
-});
+const payPalProvider = new PayPalProvider();
 
 export class PaymentService {
-    static async createCheckoutSession(orderId: string, amount: number, currency: string) {
-        // Create an initial payment record
-        const payment = new Payment({
-            order_id: orderId,
-            transaction_id: 'pending_' + Date.now(), // Temporary ID until Stripe provides one
-            amount: amount,
-            currency: currency,
-            status: 'pending',
-        });
-        await payment.save();
+    // ─── Provider Accessors ───────────────────────────────────────────────────
+    static getPayPalProvider(): PayPalProvider {
+        return payPalProvider;
+    }
 
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            line_items: [
+    // ─── PayPal Methods ───────────────────────────────────────────────────────
+
+    /**
+     * Create PayPal Order (Auth required).
+     * Server calculates amount from database order to prevent tampering.
+     */
+    static async createPayPalOrder(orderId: string, userId: string, isAdmin = false) {
+        const order = await Order.findById(orderId);
+        if (!order) throw new Error('Order not found');
+
+        if (!isAdmin && order.user_id.toString() !== userId) {
+            throw new Error('Unauthorized to pay for this order');
+        }
+
+        if (order.payment_status === 'paid') {
+            throw new Error('Order is already paid');
+        }
+
+        const paymentResult = await payPalProvider.createPayment(order);
+
+        order.paymentProvider = 'paypal';
+        order.paypalOrderId = paymentResult.paypalOrderId;
+        await order.save();
+
+        return {
+            paypalOrderId: paymentResult.paypalOrderId,
+        };
+    }
+
+    /**
+     * Capture PayPal Order (Auth required).
+     * Verifies order belongs to user and updates payment state. Idempotent.
+     */
+    static async capturePayPalOrder(paypalOrderId: string, userId: string, isAdmin = false) {
+        let order = await Order.findOne({ paypalOrderId });
+        if (!order) {
+            // Fallback search by reference if needed
+            order = await Order.findOne({ _id: paypalOrderId });
+        }
+        if (!order) throw new Error(`Order with PayPal order ID ${paypalOrderId} not found`);
+
+        if (!isAdmin && order.user_id.toString() !== userId) {
+            throw new Error('Unauthorized to capture payment for this order');
+        }
+
+        // Idempotency: if already paid, return success immediately
+        if (order.payment_status === 'paid') {
+            return {
+                success: true,
+                orderId: order._id.toString(),
+                status: 'paid',
+                alreadyPaid: true,
+                captureId: order.paypalCaptureId,
+            };
+        }
+
+        const captureResult = await payPalProvider.capture(paypalOrderId, order);
+
+        if (captureResult.success) {
+            order.payment_status = 'paid';
+            if (order.status === 'pending') {
+                order.status = 'paid';
+            }
+            order.paymentProvider = 'paypal';
+            order.paypalCaptureId = captureResult.captureId;
+            await order.save();
+
+            // Create or update Payment record
+            await Payment.findOneAndUpdate(
+                { order_id: order._id },
                 {
-                    price_data: {
-                        currency: currency,
-                        product_data: {
-                            name: `Order #${orderId}`,
-                        },
-                        unit_amount: Math.round(amount * 100), // Stripe expects amount in cents
-                    },
-                    quantity: 1,
+                    order_id: order._id,
+                    transaction_id: captureResult.captureId || paypalOrderId,
+                    amount: order.total_amount,
+                    currency: 'usd',
+                    status: 'successful',
                 },
-            ],
-            mode: 'payment',
-            client_reference_id: orderId,
-            success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders/${orderId}?payment=success`,
-            cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders/${orderId}?payment=cancel`,
-            metadata: {
-                payment_record_id: payment._id.toString(),
-            }
-        });
+                { upsert: true, new: true }
+            );
 
-        // Update with the actual checkout session id
-        payment.transaction_id = session.id;
-        await payment.save();
-
-        return session;
-    }
-
-    static async handleWebhookEvent(body: string | Buffer, signature: string, secret: string) {
-        let event;
-
-        try {
-            event = stripe.webhooks.constructEvent(body, signature, secret);
-        } catch (err: any) {
-            throw new Error(`Webhook Validation Error: ${err.message}`);
-        }
-
-        if (event.type === 'checkout.session.completed') {
-            const session = event.data.object as Stripe.Checkout.Session;
-            const paymentId = session.metadata?.payment_record_id;
-
-            if (paymentId) {
-                const payment = await Payment.findById(paymentId);
-                if (payment) {
-                    payment.status = 'successful';
-                    // Save either the specific payment intent or fallback to the session id
-                    payment.transaction_id = (session.payment_intent as string) || session.id;
-                    await payment.save();
-
-                    // Update the order status since payment succeeded
-                    const order = await Order.findById(payment.order_id);
-                    if (order) {
-                        order.payment_status = 'paid';
-                        if (order.status === 'pending') {
-                            order.status = 'paid';
-                        }
-                        await order.save();
-                    }
-
-                    // ── Publish payment.success to message queue ─────────────
-                    // Workers will send payment confirmation email + initiate shipping
-                    await rabbitMQ.publishEvent('payment.success', {
-                        orderId: payment.order_id.toString(),
-                        userId: order?.user_id?.toString(),
-                        amount: payment.amount,
-                    });
-                }
-            }
-        } else if (event.type === 'payment_intent.payment_failed') {
-            const intent = event.data.object as Stripe.PaymentIntent;
-            // Handle failed payment, matching by transaction_id OR metadata if we stored it
-            const payment = await Payment.findOne({ transaction_id: intent.id });
-            if (payment) {
-                payment.status = 'failed';
-                await payment.save();
-            }
-        } else if (event.type === 'charge.refunded') {
-            const charge = event.data.object as Stripe.Charge;
-            if (charge.payment_intent) {
-                const payment = await Payment.findOne({ transaction_id: charge.payment_intent as string });
-                if (payment) {
-                    payment.status = 'refunded';
-                    await payment.save();
-                    const order = await Order.findById(payment.order_id);
-                    if (order) {
-                        order.payment_status = 'refunded';
-                        // Optionally update status to cancelled based on your business logic
-                        order.status = 'cancelled';
-                        await order.save();
-                    }
-                }
-            }
-        }
-
-        return event;
-    }
-
-    static async processRefund(paymentId: string) {
-        const payment = await Payment.findById(paymentId);
-        if (!payment) throw new Error('Payment not found');
-        if (payment.status !== 'successful') throw new Error('Only successful payments can be refunded');
-
-        // The transaction_id generally acts as the Payment Intent when 'successful'
-        const refund = await stripe.refunds.create({
-            payment_intent: payment.transaction_id,
-        });
-
-        // We update status synchronously here, though the webhook will also catch it asynchronously
-        if (refund.status === 'succeeded' || refund.status === 'pending') {
-            payment.status = 'refunded';
-            await payment.save();
-
-            const order = await Order.findById(payment.order_id);
-            if (order) {
-                order.payment_status = 'refunded';
-                order.status = 'cancelled';
-                await order.save();
-            }
-
-            // ── Publish refund job to message queue ───────────────────────────
-            // Background worker will send refund confirmation email
-            await rabbitMQ.publishEvent('job.process_refund', {
-                orderId: payment.order_id.toString(),
-                userId: order?.user_id?.toString(),
-                amount: payment.amount,
+            // Publish payment.success to RabbitMQ
+            await rabbitMQ.publishEvent('payment.success', {
+                orderId: order._id.toString(),
+                userId: order.user_id.toString(),
+                amount: order.total_amount,
             });
+
+            // Notify Socket.IO
+            try {
+                const { getIO } = await import('../../config/socket');
+                getIO().to(`order:${order._id.toString()}`).emit('status:changed', {
+                    status: 'paid',
+                    payment_status: 'paid',
+                });
+            } catch {
+                // Socket.io room notification
+            }
+
+            return {
+                success: true,
+                orderId: order._id.toString(),
+                status: 'paid',
+                captureId: captureResult.captureId,
+            };
         }
 
-        return refund;
+        throw new Error(`PayPal capture failed with status: ${captureResult.status}`);
     }
 
-    static async verifyPaymentStatus(orderId: string) {
-        // Get the latest payment for this order
-        const payment = await Payment.findOne({ order_id: orderId }).sort({ _id: -1 });
-        if (!payment) throw new Error('Payment record not found');
-
-        if (payment.status === 'successful') {
-            return { verified: true, status: 'paid' };
+    /**
+     * Handle PayPal Webhook (Public, raw body signature verification).
+     */
+    static async handlePayPalWebhook(headers: Record<string, unknown>, rawBody: string | Buffer) {
+        const verification = await payPalProvider.verifyWebhook(headers, rawBody);
+        if (!verification.isValid) {
+            throw new Error(`PayPal Webhook verification failed: ${verification.error || 'Invalid signature'}`);
         }
 
-        if (payment.status === 'pending' && payment.transaction_id && payment.transaction_id.startsWith('cs_')) {
-            try {
-                const session = await stripe.checkout.sessions.retrieve(payment.transaction_id);
-                if (session.payment_status === 'paid') {
-                    payment.status = 'successful';
-                    payment.transaction_id = (session.payment_intent as string) || session.id;
-                    await payment.save();
+        const eventType = verification.eventType;
+        const resource = (verification.resource || {}) as PayPalWebhookEventResource;
 
-                    const order = await Order.findById(orderId);
-                    if (order) {
-                        order.payment_status = 'paid';
-                        if (order.status === 'pending') {
-                            order.status = 'paid';
-                        }
-                        await order.save();
-                    }
+        logger.info({ eventType, resourceId: resource.id }, 'Processing PayPal webhook event');
 
-                    // ── Trigger shipping workflow ─────────────────
-                    await rabbitMQ.publishEvent('payment.success', {
-                        paymentId: payment._id.toString(),
-                        orderId: payment.order_id.toString(),
-                        userId: order?.user_id?.toString(),
-                        amount: payment.amount,
-                    });
+        if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
+            const captureId = resource.id;
+            const customOrderId = resource.custom_id;
+            const relatedOrderId = resource.supplementary_data?.related_ids?.order_id;
 
-                    return { verified: true, status: 'paid' };
+            let order: any = null;
+            if (customOrderId) {
+                order = await Order.findById(customOrderId);
+            }
+            if (!order && relatedOrderId) {
+                order = await Order.findOne({ paypalOrderId: relatedOrderId });
+            }
+            if (!order && captureId) {
+                order = await Order.findOne({ paypalCaptureId: captureId });
+            }
+
+            if (order) {
+                if (order.payment_status === 'paid') {
+                    return { received: true, message: 'Order already marked as paid' };
                 }
-            } catch (error: any) {
-                console.error('Stripe session retrieval error:', error.message);
+
+                order.payment_status = 'paid';
+                if (order.status === 'pending') {
+                    order.status = 'paid';
+                }
+                order.paymentProvider = 'paypal';
+                order.paypalCaptureId = captureId;
+                await order.save();
+
+                await Payment.findOneAndUpdate(
+                    { order_id: order._id },
+                    {
+                        order_id: order._id,
+                        transaction_id: captureId,
+                        amount: order.total_amount,
+                        currency: 'usd',
+                        status: 'successful',
+                    },
+                    { upsert: true, new: true }
+                );
+
+                await rabbitMQ.publishEvent('payment.success', {
+                    orderId: order._id.toString(),
+                    userId: order.user_id.toString(),
+                    amount: order.total_amount,
+                });
+
+                try {
+                    const { getIO } = await import('../../config/socket');
+                    getIO().to(`order:${order._id.toString()}`).emit('status:changed', {
+                        status: 'paid',
+                        payment_status: 'paid',
+                    });
+                } catch {
+                    // Socket.io room notification
+                }
+            }
+        } else if (eventType === 'PAYMENT.CAPTURE.DENIED') {
+            const captureId = resource.id;
+            const customOrderId = resource.custom_id;
+
+            const order = customOrderId
+                ? await Order.findById(customOrderId)
+                : await Order.findOne({ paypalCaptureId: captureId });
+
+            if (order && order.payment_status !== 'paid') {
+                await Payment.findOneAndUpdate(
+                    { order_id: order._id },
+                    {
+                        order_id: order._id,
+                        transaction_id: captureId,
+                        amount: order.total_amount,
+                        currency: 'usd',
+                        status: 'failed',
+                    },
+                    { upsert: true }
+                );
+            }
+        } else if (eventType === 'PAYMENT.CAPTURE.REFUNDED') {
+            const captureId = resource.id;
+            const customOrderId = resource.custom_id;
+
+            const order = customOrderId
+                ? await Order.findById(customOrderId)
+                : await Order.findOne({ paypalCaptureId: captureId });
+
+            if (order) {
+                if (order.payment_status !== 'refunded') {
+                    order.payment_status = 'refunded';
+                    order.status = 'cancelled';
+                    await order.save();
+
+                    await Payment.findOneAndUpdate(
+                        { order_id: order._id },
+                        { status: 'refunded' }
+                    );
+
+                    try {
+                        const { getIO } = await import('../../config/socket');
+                        getIO().to(`order:${order._id.toString()}`).emit('status:changed', {
+                            status: 'cancelled',
+                            payment_status: 'refunded',
+                        });
+                    } catch {
+                        // Socket.io room notification
+                    }
+                }
             }
         }
 
-        return { verified: false, status: payment.status };
+        return { received: true, eventType };
+    }
+
+    /**
+     * Admin refund for PayPal order (Admin only).
+     */
+    static async processPayPalRefund(orderId: string, amount?: number) {
+        const order = await Order.findById(orderId);
+        if (!order) throw new Error('Order not found');
+
+        if (order.payment_status !== 'paid') {
+            throw new Error('Only paid orders can be refunded');
+        }
+
+        let captureId = order.paypalCaptureId;
+        if (!captureId) {
+            const payment = await Payment.findOne({ order_id: order._id, status: 'successful' });
+            if (payment?.transaction_id && !payment.transaction_id.startsWith('pending_')) {
+                captureId = payment.transaction_id;
+            }
+        }
+
+        if (!captureId) {
+            throw new Error('PayPal capture ID not found on this order');
+        }
+
+        const refundResult = await payPalProvider.refund(captureId, amount || order.total_amount);
+
+        if (refundResult.success) {
+            order.payment_status = 'refunded';
+            order.status = 'cancelled';
+            await order.save();
+
+            await Payment.findOneAndUpdate(
+                { order_id: order._id },
+                { status: 'refunded' }
+            );
+
+            await rabbitMQ.publishEvent('job.process_refund', {
+                orderId: order._id.toString(),
+                userId: order.user_id.toString(),
+                amount: amount || order.total_amount,
+            });
+
+            try {
+                const { getIO } = await import('../../config/socket');
+                getIO().to(`order:${order._id.toString()}`).emit('status:changed', {
+                    status: 'cancelled',
+                    payment_status: 'refunded',
+                });
+            } catch {
+                // Socket.io room notification
+            }
+        }
+
+        return refundResult;
     }
 }

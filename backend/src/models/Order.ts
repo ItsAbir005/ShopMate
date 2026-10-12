@@ -33,6 +33,9 @@ export interface IOrder extends Document {
     total_amount: number;
     status: OrderStatus;
     payment_status: PaymentStatus;
+    paymentProvider?: 'stripe' | 'paypal';
+    paypalOrderId?: string;
+    paypalCaptureId?: string;
     cancellation_reason?: string;
     cancelled_at?: Date;
 }
@@ -75,6 +78,13 @@ const OrderSchema = new Schema(
             enum: ['unpaid', 'paid', 'refunded'],
             default: 'unpaid',
         },
+        paymentProvider: {
+            type: String,
+            enum: ['stripe', 'paypal'],
+            default: 'paypal',
+        },
+        paypalOrderId: { type: String },
+        paypalCaptureId: { type: String },
         cancellation_reason: { type: String },
         cancelled_at: { type: Date },
     },

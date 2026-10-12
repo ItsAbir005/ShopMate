@@ -70,6 +70,13 @@ const OrderSchema = new mongoose_1.Schema({
         enum: ['unpaid', 'paid', 'refunded'],
         default: 'unpaid',
     },
+    paymentProvider: {
+        type: String,
+        enum: ['stripe', 'paypal'],
+        default: 'paypal',
+    },
+    paypalOrderId: { type: String },
+    paypalCaptureId: { type: String },
     cancellation_reason: { type: String },
     cancelled_at: { type: Date },
 }, { timestamps: true });

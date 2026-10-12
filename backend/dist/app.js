@@ -59,12 +59,28 @@ const app = (0, express_1.default)();
 (0, db_1.connectDB)();
 (0, redis_1.connectRedis)();
 rabbitmq_1.rabbitMQ.connect();
+const allowedOrigins = [
+    process.env.FRONTEND_URL?.replace(/\/$/, ""),
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://ecommerce-q1ph.vercel.app",
+].filter(Boolean);
 app.use((0, cors_1.default)({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+            callback(null, true);
+        }
+        else {
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
     credentials: true,
 }));
-// Webhook must be parsed as raw data BEFORE express.json()
-app.use("/api/payments/webhook", express_1.default.raw({ type: "application/json" }));
+// PayPal webhook must be parsed as raw data BEFORE express.json()
+app.use([
+    "/api/payments/paypal/webhook",
+    "/api/payment/paypal/webhook"
+], express_1.default.raw({ type: "application/json" }));
 app.use(express_1.default.json());
 app.use("/api/auth", auth_routes_1.default);
 app.use("/api/users", user_routes_1.default);
@@ -73,6 +89,7 @@ app.use("/api/cart", cart_routes_1.default);
 app.use("/api/orders", order_routes_1.default);
 app.use("/api/categories", category_routes_1.default);
 app.use("/api/payments", payment_routes_1.default);
+app.use("/api/payment", payment_routes_1.default);
 app.use("/api/shipping", shipping_routes_1.default);
 app.use("/api/drivers", driver_routes_1.default);
 app.use("/api/notifications", notification_routes_1.default);

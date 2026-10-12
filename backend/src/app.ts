@@ -22,10 +22,12 @@ const app = express();
 connectDB();
 connectRedis();
 rabbitMQ.connect();
+
 const allowedOrigins = [
     process.env.FRONTEND_URL?.replace(/\/$/, ""),
     "http://localhost:3000",
     "http://localhost:5173",
+    "https://ecommerce-q1ph.vercel.app",
 ].filter(Boolean) as string[];
 
 app.use(cors({
@@ -39,8 +41,11 @@ app.use(cors({
     credentials: true,
 }));
 
-// Webhook must be parsed as raw data BEFORE express.json()
-app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
+// PayPal webhook must be parsed as raw data BEFORE express.json()
+app.use([
+    "/api/payments/paypal/webhook",
+    "/api/payment/paypal/webhook"
+], express.raw({ type: "application/json" }));
 
 app.use(express.json());
 
@@ -51,6 +56,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/payment", paymentRoutes);
 app.use("/api/shipping", shippingRoutes);
 app.use("/api/drivers", driverRoutes);
 app.use("/api/notifications", notificationRoutes);
@@ -63,4 +69,3 @@ app.get("/api/debug-sentry", function mainHandler(req: express.Request, res: exp
 Sentry.setupExpressErrorHandler(app);
 
 export default app;
-

@@ -136,6 +136,7 @@ const createOrder = async (userId, shippingAddress) => {
             total_amount: total,
             status: 'pending',
             payment_status: 'unpaid',
+            paymentProvider: 'paypal',
         });
     }
     catch (dbErr) {

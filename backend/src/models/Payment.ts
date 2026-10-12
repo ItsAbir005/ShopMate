@@ -4,7 +4,7 @@ export type PaymentStatus = 'pending' | 'successful' | 'failed' | 'refunded';
 
 export interface IPayment extends Document {
     order_id: mongoose.Types.ObjectId;
-    transaction_id: string; // The Stripe Session ID, Payment Intent ID, or Charge ID
+    transaction_id: string; // PayPal Capture ID or legacy transaction ID
     amount: number;
     currency: string;
     payment_method: string;

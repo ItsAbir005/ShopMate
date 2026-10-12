@@ -43,7 +43,7 @@ const createShipment = async (orderId) => {
     // For a real system pick-up address would be the warehouse.
     // Using a placeholder here; update for your actual warehouse address.
     const warehouseAddress = {
-        street: '123 Aura Warehouse',
+        street: '123 ShopMate Warehouse',
         city: 'Mumbai',
         state: 'Maharashtra',
         zip: '400001',

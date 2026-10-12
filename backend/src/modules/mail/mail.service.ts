@@ -1,10 +1,11 @@
 import nodemailer from 'nodemailer';
 
 // ── Create transport ───────────────────────────────────────────────────────────
+const smtpPort = parseInt(process.env.SMTP_PORT || '587');
 const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'localhost',
-    port: parseInt(process.env.SMTP_PORT || '1025'),
-    secure: false, // true for 465, false for other ports
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: smtpPort,
+    secure: smtpPort === 465, // true for 465, false for 587 and others
     auth: process.env.SMTP_USER
         ? {
             user: process.env.SMTP_USER,
@@ -13,7 +14,7 @@ const transporter = nodemailer.createTransport({
         : undefined,
 });
 
-const FROM = process.env.FROM_EMAIL || '"ShopNow 🛍️" <noreply@shopnow.dev>';
+const FROM = process.env.FROM_EMAIL || '"ShopMate 🛍️" <noreply@shopmate.dev>';
 
 // ── Shared HTML wrapper ────────────────────────────────────────────────────────
 const emailTemplate = (title: string, body: string) => `
@@ -56,12 +57,12 @@ const emailTemplate = (title: string, body: string) => `
 <body>
   <div class="wrapper">
     <div class="header">
-      <h1>🛍️ ShopNow</h1>
+      <h1>🛍️ ShopMate</h1>
       <p>Your premium shopping destination</p>
     </div>
     <div class="body">${body}</div>
     <div class="footer">
-      <p>You received this email because you have an account at <a href="#">ShopNow</a>.<br/>
+      <p>You received this email because you have an account at <a href="#">ShopMate</a>.<br/>
       If you have questions, reply to this email or visit our <a href="#">Help Center</a>.</p>
     </div>
   </div>
@@ -113,7 +114,7 @@ export const sendOrderConfirmation = async (
     await transporter.sendMail({
         from: FROM,
         to,
-        subject: `✅ Order Confirmed! #${orderId.slice(-8).toUpperCase()} — ShopNow`,
+        subject: `✅ Order Confirmed! #${orderId.slice(-8).toUpperCase()} — ShopMate`,
         html: emailTemplate(`Order Confirmed #${orderId.slice(-8).toUpperCase()}`, body),
     });
 
@@ -182,7 +183,7 @@ export const sendReminderEmail = async (
     await transporter.sendMail({
         from: FROM,
         to,
-        subject: `⏰ Reminder: Your order is waiting for payment — ShopNow`,
+        subject: `⏰ Reminder: Your order is waiting for payment — ShopMate`,
         html: emailTemplate('Order Reminder', body),
     });
 

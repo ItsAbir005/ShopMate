@@ -171,6 +171,7 @@ export const createOrder = async (userId: string, shippingAddress: {
             total_amount: total,
             status: 'pending',
             payment_status: 'unpaid',
+            paymentProvider: 'paypal',
         });
     } catch (dbErr) {
         // Order DB write failed — release all stock locks
