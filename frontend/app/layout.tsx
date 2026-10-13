@@ -7,7 +7,7 @@ import { ToastProvider } from "./components/Toast";
 import SupportAgent from "./components/SupportAgent";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ShoppingCart, Tag, User as UserIcon, LogOut, Menu, X } from "lucide-react";
+import { ShoppingCart, User as UserIcon, LogOut, Menu, X } from "lucide-react";
 
 function Navigation() {
   const { user, logout } = useAuth();
@@ -37,12 +37,6 @@ function Navigation() {
             {mounted && user && (
               <Link href="/orders" className="text-gray-600 hover:text-gray-900 transition-colors text-sm font-medium">
                 Orders
-              </Link>
-            )}
-            {mounted && user && (
-              <Link href="/sell" className="text-gray-600 hover:text-gray-900 transition-colors text-sm font-medium flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" />
-                <span>Sell</span>
               </Link>
             )}
           </div>
@@ -122,16 +116,6 @@ function Navigation() {
               className="text-gray-700 hover:text-indigo-600 text-sm font-medium py-1.5"
             >
               Orders
-            </Link>
-          )}
-          {mounted && user && (
-            <Link
-              href="/sell"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-gray-700 hover:text-indigo-600 text-sm font-medium py-1.5 flex items-center gap-1.5"
-            >
-              <Tag className="w-3.5 h-3.5" />
-              <span>Sell</span>
             </Link>
           )}
           {mounted && user && (

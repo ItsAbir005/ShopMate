@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useEffect, ReactNode } from "react";
 import { CheckCircle2, XCircle, Info, AlertTriangle, X } from "lucide-react";
 
 type ToastType = "success" | "error" | "info" | "warning";
@@ -91,6 +91,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         },
         [remove]
     );
+
+    useEffect(() => {
+        const handleApiError = (e: any) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail && detail.message) {
+                toast("error", "Request Failed", detail.message);
+            }
+        };
+        window.addEventListener("shopmate:api-error", handleApiError as EventListener);
+        return () => window.removeEventListener("shopmate:api-error", handleApiError as EventListener);
+    }, [toast]);
 
     return (
         <ToastContext.Provider value={{ toast }}>

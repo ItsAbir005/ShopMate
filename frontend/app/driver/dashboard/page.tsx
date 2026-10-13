@@ -24,12 +24,47 @@ interface PendingRequest {
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 export default function DriverDashboard() {
-    const { driver, fetchWithAuth, token, loading: ctxLoading } = useDriver();
+    const { driver, fetchWithAuth, token, loading: ctxLoading, setOnlineStatus } = useDriver();
     const [activeDelivery, setActiveDelivery] = useState<ActiveDelivery | null>(null);
     const [loadingDelivery, setLoadingDelivery] = useState(true);
     const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null);
     const [responding, setResponding] = useState(false);
+    const [togglingStatus, setTogglingStatus] = useState(false);
     const locationWatchRef = useRef<number | null>(null);
+
+    const handleToggleStatus = async () => {
+        if (!driver || togglingStatus) return;
+        setTogglingStatus(true);
+        try {
+            const currentlyOnline = driver.status === "online" || driver.status === "busy";
+            if (currentlyOnline) {
+                await setOnlineStatus("offline");
+            } else {
+                let lat = 22.5726;
+                let lng = 88.3639;
+                if (typeof window !== "undefined" && "geolocation" in navigator) {
+                    try {
+                        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                                timeout: 5000,
+                                enableHighAccuracy: true,
+                            });
+                        });
+                        lat = pos.coords.latitude;
+                        lng = pos.coords.longitude;
+                    } catch (geoErr) {
+                        console.warn("[Driver] Geolocation prompt/timeout, using fallback:", geoErr);
+                    }
+                }
+                await setOnlineStatus("online", lat, lng);
+            }
+        } catch (err: any) {
+            console.error("[Driver] Error toggling status:", err);
+            alert(`Failed to update status: ${err.message || "Server error"}`);
+        } finally {
+            setTogglingStatus(false);
+        }
+    };
 
     const loadActiveDelivery = async () => {
         try {
@@ -149,7 +184,7 @@ export default function DriverDashboard() {
                 </div>
                 <div className="flex items-center gap-2">
                     <span
-                        className={`text-xs px-3 py-1 rounded-full font-semibold border ${
+                        className={`text-xs px-3 py-1.5 rounded-full font-semibold border ${
                             isOnline
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                                 : "bg-gray-100 text-gray-600 border-gray-200"
@@ -157,6 +192,17 @@ export default function DriverDashboard() {
                     >
                         {driver?.status?.toUpperCase() || "OFFLINE"}
                     </span>
+                    <button
+                        onClick={handleToggleStatus}
+                        disabled={togglingStatus || driver?.status === "busy"}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 ${
+                            isOnline
+                                ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                                : "bg-indigo-600 text-white hover:bg-indigo-700"
+                        }`}
+                    >
+                        {togglingStatus ? "Updating..." : isOnline ? "Go Offline" : "Go Online"}
+                    </button>
                 </div>
             </div>
 

@@ -15,13 +15,27 @@ import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import Message from '../models/Message';
+import { logger } from '../utils/logger';
 
 let io: SocketIOServer;
 
 export const initSocket = (httpServer: HttpServer): SocketIOServer => {
+    const allowedOrigins = [
+        process.env.FRONTEND_URL?.replace(/\/$/, ""),
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://ecommerce-q1ph.vercel.app',
+    ].filter(Boolean) as string[];
+
     io = new SocketIOServer(httpServer, {
         cors: {
-            origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+            origin: (origin, callback) => {
+                if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+                    callback(null, true);
+                } else {
+                    callback(new Error('Not allowed by CORS'));
+                }
+            },
             methods: ['GET', 'POST'],
             credentials: true,
         },
@@ -53,20 +67,20 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
         // Driver joins their personal room for receiving assignments
         if (role === 'driver' && userId) {
             socket.join(`driver:${userId}`);
-            console.log(`🔌 Driver ${userId} connected to socket`);
+            logger.info({ userId }, "[socket] Driver connected to socket");
         }
 
         // Customer joins order tracking room
         // Client sends: socket.emit('track:order', { orderId })
         socket.on('track:order', ({ orderId }: { orderId: string }) => {
             socket.join(`order:${orderId}`);
-            console.log(`📍 Client tracking order: ${orderId}`);
+            logger.info({ orderId }, "[socket] Client tracking order");
         });
 
         // Chat logic
         socket.on('join:chat', ({ shipmentId }: { shipmentId: string }) => {
             socket.join(`chat:${shipmentId}`);
-            console.log(`💬 User/Driver joined chat:${shipmentId}`);
+            logger.info({ shipmentId }, "[socket] User/Driver joined chat");
         });
 
         socket.on('send:message', async (data: { shipmentId: string; senderMode: 'customer'|'driver'; senderId: string; text: string }) => {
@@ -85,21 +99,22 @@ export const initSocket = (httpServer: HttpServer): SocketIOServer => {
                     text: data.text
                 });
                 
+                logger.info({ shipmentId: data.shipmentId, senderId: finalSenderId }, "[socket] Message sent");
                 // Broadcast to everyone in the room (including sender to confirm)
                 io.to(`chat:${data.shipmentId}`).emit('receive:message', newMessage);
             } catch (err) {
-                console.error("Error saving message", err);
+                logger.error({ err }, "[socket] Error saving message");
             }
         });
 
         socket.on('disconnect', () => {
             if (role === 'driver') {
-                console.log(`🔴 Driver ${userId} disconnected`);
+                logger.info({ userId }, "[socket] Driver disconnected");
             }
         });
     });
 
-    console.log('🔌 Socket.io server initialized');
+    logger.info("[socket] Socket.io server initialized");
     return io;
 };
 

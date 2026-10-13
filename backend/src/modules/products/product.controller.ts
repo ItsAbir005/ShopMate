@@ -1,18 +1,62 @@
 import { Request, Response } from "express";
 import { Product } from "../../models/Product";
 import { redisClient } from "../../config/redis";
-import { AuthRequest } from "../../middleware/auth.middleware";
+import { logger } from "../../utils/logger";
+
+// === Safe Redis Helpers (resilient fallback to DB on Redis failure) ===
+const safeRedisGet = async (key: string): Promise<string | null> => {
+    try {
+        if (redisClient.isOpen) {
+            return await redisClient.get(key);
+        }
+    } catch (err) {
+        logger.warn({ err, key }, "[products] Redis GET error, falling back to database");
+    }
+    return null;
+};
+
+const safeRedisSetEx = async (key: string, seconds: number, value: string): Promise<void> => {
+    try {
+        if (redisClient.isOpen) {
+            await redisClient.setEx(key, seconds, value);
+        }
+    } catch (err) {
+        logger.warn({ err, key }, "[products] Redis SETEX error");
+    }
+};
+
+const safeRedisSAdd = async (setKey: string, member: string): Promise<void> => {
+    try {
+        if (redisClient.isOpen) {
+            await redisClient.sAdd(setKey, member);
+        }
+    } catch (err) {
+        logger.warn({ err, setKey }, "[products] Redis SADD error");
+    }
+};
+
+const safeRedisDel = async (key: string | string[]): Promise<void> => {
+    try {
+        if (redisClient.isOpen) {
+            await redisClient.del(key);
+        }
+    } catch (err) {
+        logger.warn({ err, key }, "[products] Redis DEL error");
+    }
+};
 
 // === Helper: Invalidate Product List Caches ===
 const invalidateProductCaches = async () => {
     try {
-        const keys = await redisClient.sMembers('products:cache');
-        if (keys.length > 0) {
-            await redisClient.del(keys);
+        if (redisClient.isOpen) {
+            const keys = await redisClient.sMembers("products:cache");
+            if (keys && keys.length > 0) {
+                await redisClient.del(keys);
+            }
+            await redisClient.del("products:cache");
         }
-        await redisClient.del('products:cache');
     } catch (err) {
-        console.error("Redis cache invalidation error:", err);
+        logger.warn({ err }, "[products] Redis cache invalidation error");
     }
 };
 
@@ -23,156 +67,145 @@ const invalidateProductCaches = async () => {
 // @access  Private/Admin
 export const createProduct = async (req: Request, res: Response): Promise<any> => {
     try {
-        const { title, description, price, stock, category_id, images, variants, discount } = req.body;
+        const { title, description, price, stock, category_id, discount } = req.body;
+
+        if (!title || !description || price === undefined || stock === undefined || !category_id) {
+            return res.status(400).json({
+                message: "Title, description, price, stock, and category are required"
+            });
+        }
+
+        // Handle uploaded images from multer/cloudinary or raw image URLs in body
+        const imageFiles = (req as any).files;
+        let images: string[] = [];
+        if (imageFiles && Array.isArray(imageFiles) && imageFiles.length > 0) {
+            images = imageFiles.map((f: any) => f.path || f.secure_url || f.location);
+        } else if (req.body.images) {
+            images = Array.isArray(req.body.images) ? req.body.images : [req.body.images];
+        }
+
+        let parsedVariants: any[] = [];
+        if (req.body.variants) {
+            try {
+                parsedVariants = typeof req.body.variants === "string"
+                    ? JSON.parse(req.body.variants)
+                    : req.body.variants;
+            } catch {
+                parsedVariants = [];
+            }
+        }
 
         const product = new Product({
             title,
             description,
-            price,
-            stock,
+            price: Number(price),
+            stock: Number(stock),
             category_id,
             images,
-            variants,
-            discount,
-            status: 'approved',
+            variants: parsedVariants,
+            discount: discount !== undefined ? Number(discount) : 0,
+            status: "approved",
         });
 
         const createdProduct = await product.save();
         await invalidateProductCaches();
 
+        logger.info({ productId: createdProduct._id, title: createdProduct.title }, "[products] Product created successfully");
         return res.status(201).json(createdProduct);
-    } catch (error) {
-        console.error("Error creating product:", error);
-        return res.status(500).json({ message: "Server error creating product" });
+    } catch (error: any) {
+        logger.error({ error: error.message, stack: error.stack }, "[products] Error creating product");
+        return res.status(500).json({ message: error.message || "Server error creating product" });
     }
 };
 
-// @desc    Update a product
+// @desc    Update a product (admin)
 // @route   PUT /api/products/:id
 // @access  Private/Admin
 export const updateProduct = async (req: Request, res: Response): Promise<any> => {
     try {
-        const { title, description, price, stock, category_id, images, variants, discount } = req.body;
-
+        const { title, description, price, stock, category_id, discount } = req.body;
         const product = await Product.findById(req.params.id);
 
-        if (product) {
-            product.title = title || product.title;
-            product.description = description || product.description;
-            product.price = price || product.price;
-            product.stock = stock !== undefined ? stock : product.stock;
-            product.category_id = category_id || product.category_id;
-            product.images = images || product.images;
-            product.variants = variants || product.variants;
-            product.discount = discount !== undefined ? discount : product.discount;
-
-            const updatedProduct = await product.save();
-            await invalidateProductCaches();
-            await redisClient.del(`product:${req.params.id}`);
-
-            return res.json(updatedProduct);
-        } else {
+        if (!product) {
             return res.status(404).json({ message: "Product not found" });
         }
-    } catch (error) {
-        console.error("Error updating product:", error);
-        return res.status(500).json({ message: "Server error updating product" });
+
+        if (title !== undefined) product.title = title;
+        if (description !== undefined) product.description = description;
+        if (price !== undefined) product.price = Number(price);
+        if (stock !== undefined) product.stock = Number(stock);
+        if (category_id !== undefined) product.category_id = category_id;
+        if (discount !== undefined) product.discount = Number(discount);
+
+        // Handle uploaded images from multer/cloudinary or images array in body
+        const imageFiles = (req as any).files;
+        if (imageFiles && Array.isArray(imageFiles) && imageFiles.length > 0) {
+            const newImages = imageFiles.map((f: any) => f.path || f.secure_url || f.location);
+            // Append or replace if existing
+            product.images = [...(product.images || []), ...newImages];
+        } else if (req.body.images !== undefined) {
+            product.images = Array.isArray(req.body.images) ? req.body.images : [req.body.images];
+        }
+
+        if (req.body.variants !== undefined) {
+            try {
+                product.variants = typeof req.body.variants === "string"
+                    ? JSON.parse(req.body.variants)
+                    : req.body.variants;
+            } catch {
+                product.variants = [];
+            }
+        }
+
+        const updatedProduct = await product.save();
+        await invalidateProductCaches();
+        await safeRedisDel(`product:${req.params.id}`);
+
+        logger.info({ productId: updatedProduct._id }, "[products] Product updated successfully");
+        return res.json(updatedProduct);
+    } catch (error: any) {
+        logger.error({ error: error.message, stack: error.stack, id: req.params.id }, "[products] Error updating product");
+        return res.status(500).json({ message: error.message || "Server error updating product" });
     }
 };
 
-// @desc    Delete a product
+// @desc    Delete a product (admin)
 // @route   DELETE /api/products/:id
 // @access  Private/Admin
 export const deleteProduct = async (req: Request, res: Response): Promise<any> => {
     try {
         const product = await Product.findById(req.params.id);
 
-        if (product) {
-            await product.deleteOne();
-            await invalidateProductCaches();
-            await redisClient.del(`product:${req.params.id}`);
-
-            return res.json({ message: "Product removed" });
-        } else {
+        if (!product) {
             return res.status(404).json({ message: "Product not found" });
         }
-    } catch (error) {
-        console.error("Error deleting product:", error);
-        return res.status(500).json({ message: "Server error deleting product" });
-    }
-};
 
-// @desc    Get all pending sell listings (for admin review)
-// @route   GET /api/products/admin/pending
-// @access  Private/Admin
-export const getPendingListings = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const listings = await Product.find({ status: 'pending' })
-            .populate('seller_id', 'name email')
-            .populate('category_id', 'name')
-            .sort({ createdAt: -1 });
-
-        return res.json(listings);
-    } catch (error) {
-        console.error("Error fetching pending listings:", error);
-        return res.status(500).json({ message: "Server error fetching pending listings" });
-    }
-};
-
-// @desc    Approve a sell listing
-// @route   PATCH /api/products/admin/:id/approve
-// @access  Private/Admin
-export const approveListing = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const product = await Product.findById(req.params.id);
-        if (!product) return res.status(404).json({ message: "Listing not found" });
-
-        product.status = 'approved';
-        product.rejectionReason = undefined;
-        await product.save();
+        await product.deleteOne();
         await invalidateProductCaches();
+        await safeRedisDel(`product:${req.params.id}`);
 
-        return res.json({ message: "Listing approved", product });
-    } catch (error) {
-        console.error("Error approving listing:", error);
-        return res.status(500).json({ message: "Server error approving listing" });
-    }
-};
-
-// @desc    Reject a sell listing
-// @route   PATCH /api/products/admin/:id/reject
-// @access  Private/Admin
-export const rejectListing = async (req: Request, res: Response): Promise<any> => {
-    try {
-        const product = await Product.findById(req.params.id);
-        if (!product) return res.status(404).json({ message: "Listing not found" });
-
-        const { reason } = req.body;
-        product.status = 'rejected';
-        product.rejectionReason = reason || 'Your listing did not meet our guidelines.';
-        await product.save();
-        await invalidateProductCaches();
-
-        return res.json({ message: "Listing rejected", product });
-    } catch (error) {
-        console.error("Error rejecting listing:", error);
-        return res.status(500).json({ message: "Server error rejecting listing" });
+        logger.info({ productId: req.params.id }, "[products] Product deleted successfully");
+        return res.json({ message: "Product removed" });
+    } catch (error: any) {
+        logger.error({ error: error.message, stack: error.stack, id: req.params.id }, "[products] Error deleting product");
+        return res.status(500).json({ message: error.message || "Server error deleting product" });
     }
 };
 
 // === Public Controllers ===
 
-// @desc    Fetch all approved products (with pagination, filtering, search, sorting)
+// @desc    Fetch products (with pagination, filtering, search, sorting, resilient cache)
 // @route   GET /api/products
 // @access  Public
 export const getProducts = async (req: Request, res: Response): Promise<any> => {
     try {
-        const pageSize = Number(req.query.limit) || 10;
-        const page = Number(req.query.page) || 1;
+        const pageSize = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
+        const page = Math.max(1, Number(req.query.page) || 1);
 
-        const cacheKey = `products:cache:${Buffer.from(JSON.stringify(req.query)).toString('base64')}`;
-        const cachedData = await redisClient.get(cacheKey);
+        const cacheKey = `products:cache:${Buffer.from(JSON.stringify(req.query)).toString("base64")}`;
+        const cachedData = await safeRedisGet(cacheKey);
         if (cachedData) {
+            logger.info({ cacheKey }, "[products] Cache hit");
             return res.json(JSON.parse(cachedData));
         }
 
@@ -180,9 +213,21 @@ export const getProducts = async (req: Request, res: Response): Promise<any> => 
             ? { title: { $regex: req.query.search as string, $options: "i" } }
             : {};
 
-        // Always restrict to approved products in public listing
-        const filter: any = { ...keyword, status: 'approved' };
-        if (req.query.category) filter.category_id = req.query.category;
+        // Products visibility:
+        // If all=true (for admin management), show all products.
+        // Otherwise, show approved products as well as legacy products where status was not set or null.
+        const filter: any = { ...keyword };
+        if (req.query.all !== "true") {
+            filter.$or = [
+                { status: "approved" },
+                { status: { $exists: false } },
+                { status: null },
+            ];
+        }
+
+        if (req.query.category) {
+            filter.category_id = req.query.category;
+        }
 
         let sortObj: any = {};
         if (req.query.sort) {
@@ -198,6 +243,7 @@ export const getProducts = async (req: Request, res: Response): Promise<any> => 
 
         const count = await Product.countDocuments(filter);
         const products = await Product.find(filter)
+            .populate("category_id", "name slug")
             .sort(sortObj)
             .limit(pageSize)
             .skip(pageSize * (page - 1));
@@ -205,17 +251,18 @@ export const getProducts = async (req: Request, res: Response): Promise<any> => 
         const responseData = {
             products,
             page,
-            pages: Math.ceil(count / pageSize),
-            total: count
+            pages: Math.ceil(count / pageSize) || 1,
+            total: count,
         };
 
-        await redisClient.setEx(cacheKey, 3600, JSON.stringify(responseData));
-        await redisClient.sAdd('products:cache', cacheKey);
+        await safeRedisSetEx(cacheKey, 3600, JSON.stringify(responseData));
+        await safeRedisSAdd("products:cache", cacheKey);
 
+        logger.info({ count, page, pageSize, total: count }, "[products] Products fetched from database");
         return res.json(responseData);
-    } catch (error) {
-        console.error("Error fetching products:", error);
-        return res.status(500).json({ message: "Server error fetching products" });
+    } catch (error: any) {
+        logger.error({ error: error.message, stack: error.stack, query: req.query }, "[products] Error fetching products");
+        return res.status(500).json({ message: error.message || "Server error fetching products" });
     }
 };
 
@@ -225,113 +272,24 @@ export const getProducts = async (req: Request, res: Response): Promise<any> => 
 export const getProductById = async (req: Request, res: Response): Promise<any> => {
     try {
         const cacheKey = `product:${req.params.id}`;
-        const cachedProduct = await redisClient.get(cacheKey);
+        const cachedProduct = await safeRedisGet(cacheKey);
 
         if (cachedProduct) {
+            logger.info({ productId: req.params.id }, "[products] Single product cache hit");
             return res.json(JSON.parse(cachedProduct));
         }
 
-        const product = await Product.findById(req.params.id);
+        const product = await Product.findById(req.params.id).populate("category_id", "name slug");
 
         if (product) {
-            await redisClient.setEx(cacheKey, 3600, JSON.stringify(product));
+            await safeRedisSetEx(cacheKey, 3600, JSON.stringify(product));
+            logger.info({ productId: req.params.id }, "[products] Single product fetched from database");
             return res.json(product);
         } else {
             return res.status(404).json({ message: "Product not found" });
         }
-    } catch (error) {
-        console.error("Error fetching product by ID:", error);
-        return res.status(500).json({ message: "Server error fetching product" });
-    }
-};
-
-// === Customer Sell Controllers ===
-
-// @desc    Customer submits a product listing for sale
-// @route   POST /api/products/sell
-// @access  Private (any authenticated user)
-export const sellProduct = async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-        const { title, description, price, stock, category_id, variants, discount } = req.body;
-
-        // Collect uploaded image URLs from Cloudinary (via multer)
-        const imageFiles = (req as any).files;
-        const images = imageFiles?.map((f: any) => f.path || f.secure_url || f.location) ?? [];
-
-        if (!title || !description || !price || !stock || !category_id) {
-            return res.status(400).json({ message: "Title, description, price, stock and category are required" });
-        }
-
-        const parsedVariants = variants
-            ? (typeof variants === 'string' ? JSON.parse(variants) : variants)
-            : [];
-
-        const product = new Product({
-            title,
-            description,
-            price: Number(price),
-            stock: Number(stock),
-            category_id,
-            images,
-            variants: parsedVariants,
-            discount: discount ? Number(discount) : 0,
-            seller_id: req.user?._id,
-            status: 'pending',
-        });
-
-        const createdProduct = await product.save();
-
-        return res.status(201).json({
-            message: "Your listing has been submitted and is pending review. We'll notify you once it's approved.",
-            product: createdProduct,
-        });
-    } catch (error) {
-        console.error("Error creating sell listing:", error);
-        return res.status(500).json({ message: "Server error creating listing" });
-    }
-};
-
-// @desc    Get current user's own sell listings (all statuses)
-// @route   GET /api/products/my-listings
-// @access  Private
-export const getMySellListings = async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-        const listings = await Product.find({ seller_id: req.user?._id })
-            .populate('category_id', 'name')
-            .sort({ createdAt: -1 });
-
-        return res.json(listings);
-    } catch (error) {
-        console.error("Error fetching user listings:", error);
-        return res.status(500).json({ message: "Server error fetching listings" });
-    }
-};
-
-// @desc    Delete own pending or rejected listing
-// @route   DELETE /api/products/my-listings/:id
-// @access  Private
-export const deleteMyListing = async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-        const product = await Product.findById(req.params.id);
-
-        if (!product) {
-            return res.status(404).json({ message: "Listing not found" });
-        }
-
-        if (product.seller_id?.toString() !== req.user?._id.toString()) {
-            return res.status(403).json({ message: "Not authorized to delete this listing" });
-        }
-
-        if (product.status === 'approved') {
-            return res.status(400).json({ message: "Approved listings cannot be deleted. Contact support." });
-        }
-
-        await product.deleteOne();
-        await invalidateProductCaches();
-
-        return res.json({ message: "Listing deleted" });
-    } catch (error) {
-        console.error("Error deleting listing:", error);
-        return res.status(500).json({ message: "Server error deleting listing" });
+    } catch (error: any) {
+        logger.error({ error: error.message, stack: error.stack, id: req.params.id }, "[products] Error fetching product by ID");
+        return res.status(500).json({ message: error.message || "Server error fetching product" });
     }
 };

@@ -39,7 +39,7 @@ type Order = {
 
 // ─── Quick-reply chips ────────────────────────────────────────────────────────
 
-const QUICK_REPLIES_GUEST = ["Track my order", "Return & refund policy", "Payment issues", "How to sell on ShopMate?", "Contact support"];
+const QUICK_REPLIES_GUEST = ["Track my order", "Return & refund policy", "Payment issues", "Contact support"];
 const QUICK_REPLIES_LOGGED = ["Where is my order?", "Cancel order", "Return & refund policy", "Payment issues", "Contact support"];
 
 // ─── Static FAQ answers ───────────────────────────────────────────────────────
@@ -49,8 +49,6 @@ const STATIC_ANSWERS: Record<string, string> = {
     "We offer a **7-day return window** from delivery. Items must be unused and in original packaging. Refunds are processed within **3–5 business days** after we receive the item.",
   "payment issues":
     "If your payment failed, please check your card/PayPal details or try a different payment method. For assistance, contact your bank or email **support@shopmate.com**.",
-  "how to sell on shopmate?":
-    "Click the **Sell** link in the nav bar, fill in your product details, upload photos, and submit. Our team will review and approve your listing within **24 hours**.",
   "contact support":
     "Our human agents are available **Mon–Fri, 9 AM–6 PM IST**.\n📧 **support@shopmate.com**\n📞 **+91-800-SHOP-MATE**",
   "track my order":

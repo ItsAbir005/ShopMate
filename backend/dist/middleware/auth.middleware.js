@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.authMiddleware = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
+const logger_1 = require("../utils/logger");
 const authMiddleware = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -25,7 +26,7 @@ const authMiddleware = async (req, res, next) => {
         next();
     }
     catch (err) {
-        console.error("JWT Verification failed:", err.message, "Full Token:", token.substring(0, 20) + "...");
+        logger_1.logger.warn({ err: err.message }, "[auth] Token verification failed");
         return res.status(401).json({ message: "Token is not valid", error: err.message });
     }
 };

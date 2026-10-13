@@ -14,7 +14,9 @@ const Driver_1 = require("../../models/Driver");
 const Shipment_1 = require("../../models/Shipment");
 const redis_1 = require("../../config/redis");
 const socket_1 = require("../../config/socket");
+const logger_1 = require("../../utils/logger");
 const GEO_KEY = 'drivers:online'; // Redis GeoSet key
+const lastLocationLogTimes = new Map();
 // ── Go Online / Offline ───────────────────────────────────────────────────────
 const setDriverStatus = async (driverId, status, lat, lng) => {
     const driver = await Driver_1.Driver.findById(driverId);
@@ -24,14 +26,29 @@ const setDriverStatus = async (driverId, status, lat, lng) => {
     driver.isAvailable = status === 'online';
     if (status === 'online' && lat !== undefined && lng !== undefined) {
         driver.currentLocation = { lat, lng, updatedAt: new Date() };
-        // Add to Redis GeoSet so we can find this driver by proximity
-        await redis_1.redisClient.geoAdd(GEO_KEY, { longitude: lng, latitude: lat, member: driverId });
+        // Add to Redis GeoSet safely
+        try {
+            if (redis_1.redisClient.isOpen) {
+                await redis_1.redisClient.geoAdd(GEO_KEY, { longitude: lng, latitude: lat, member: driverId });
+            }
+        }
+        catch (err) {
+            logger_1.logger.warn({ err, driverId }, '[driver] Failed to update Redis GeoSet on go-online');
+        }
     }
     if (status === 'offline') {
-        // Remove from GeoSet so they don't get assigned
-        await redis_1.redisClient.zRem(GEO_KEY, driverId);
+        // Remove from GeoSet safely
+        try {
+            if (redis_1.redisClient.isOpen) {
+                await redis_1.redisClient.zRem(GEO_KEY, driverId);
+            }
+        }
+        catch (err) {
+            logger_1.logger.warn({ err, driverId }, '[driver] Failed to remove from Redis GeoSet on go-offline');
+        }
     }
     await driver.save();
+    logger_1.logger.info({ driverId, status, lat, lng }, `[driver] Driver ${driverId} status updated to ${status}`);
     return { status: driver.status, isAvailable: driver.isAvailable };
 };
 exports.setDriverStatus = setDriverStatus;
@@ -42,8 +59,22 @@ const updateDriverLocation = async (driverId, lat, lng) => {
         'currentLocation.lng': lng,
         'currentLocation.updatedAt': new Date(),
     });
-    // Update position in Redis GeoSet
-    await redis_1.redisClient.geoAdd(GEO_KEY, { longitude: lng, latitude: lat, member: driverId });
+    // Update position in Redis GeoSet safely
+    try {
+        if (redis_1.redisClient.isOpen) {
+            await redis_1.redisClient.geoAdd(GEO_KEY, { longitude: lng, latitude: lat, member: driverId });
+        }
+    }
+    catch (err) {
+        logger_1.logger.warn({ err, driverId }, '[driver] Failed to update Redis GeoSet position');
+    }
+    // Throttle location logging to at most once per minute per driver
+    const now = Date.now();
+    const lastLog = lastLocationLogTimes.get(driverId) || 0;
+    if (now - lastLog >= 60000) {
+        lastLocationLogTimes.set(driverId, now);
+        logger_1.logger.info({ driverId, lat, lng }, `[driver] Location updated for driver ${driverId}`);
+    }
     // Broadcast to customer live-tracking room if active delivery exists
     try {
         const activeDelivery = await (0, exports.getActiveDelivery)(driverId);
@@ -52,7 +83,7 @@ const updateDriverLocation = async (driverId, lat, lng) => {
         }
     }
     catch (e) {
-        console.error("Failed to broadcast driver location", e);
+        logger_1.logger.error({ e }, "[driver] Failed to broadcast driver location");
     }
     return { lat, lng };
 };
@@ -62,23 +93,35 @@ exports.updateDriverLocation = updateDriverLocation;
 // Uses Redis GEOSEARCH to get member IDs sorted nearest-first, then
 // verifies each driver is still online+available in MongoDB.
 const findNearestDriver = async (lat, lng, radiusKm = 50, rejectedBy) => {
-    // geoSearchWith returns array of { member: string, distance: number }
-    const results = await redis_1.redisClient.geoSearchWith(GEO_KEY, { longitude: lng, latitude: lat }, { radius: radiusKm, unit: 'km' }, ['WITHDIST'], { SORT: 'ASC', COUNT: 10 });
-    const driverIds = results.map(r => r.member);
-    console.log(`[GEO] Found ${driverIds.length} candidate drivers within ${radiusKm}km`);
+    let driverIds = [];
+    try {
+        if (redis_1.redisClient.isOpen) {
+            const results = await redis_1.redisClient.geoSearchWith(GEO_KEY, { longitude: lng, latitude: lat }, { radius: radiusKm, unit: 'km' }, ['WITHDIST'], { SORT: 'ASC', COUNT: 10 });
+            driverIds = results.map(r => r.member);
+        }
+    }
+    catch (err) {
+        logger_1.logger.warn({ err }, '[driver] Redis geoSearchWith failed, falling back to MongoDB query');
+    }
+    // If Redis had no results or failed, query MongoDB directly for any online available driver
+    if (driverIds.length === 0) {
+        const fallbackDrivers = await Driver_1.Driver.find({ status: 'online', isAvailable: true }).limit(10);
+        driverIds = fallbackDrivers.map(d => d._id.toString());
+    }
+    logger_1.logger.info({ count: driverIds.length, radiusKm }, `[driver] Found candidate drivers within radius`);
     // Verify each candidate is still online + available in DB (Redis can be stale)
     for (const driverId of driverIds) {
         if (rejectedBy?.includes(driverId)) {
-            console.log(`[GEO] Skipping driver ${driverId} (previously rejected)`);
+            logger_1.logger.info({ driverId }, `[driver] Skipping driver (previously rejected)`);
             continue;
         }
         const driver = await Driver_1.Driver.findOne({ _id: driverId, status: 'online', isAvailable: true });
         if (driver) {
-            console.log(`[GEO] Selected available driver: ${driverId}`);
+            logger_1.logger.info({ driverId }, `[driver] Selected available driver for assignment`);
             return driverId;
         }
         else {
-            console.log(`[GEO] Driver ${driverId} found in Redis but skipped (offline/busy in DB)`);
+            logger_1.logger.info({ driverId }, `[driver] Driver found but offline/busy in DB`);
         }
     }
     return null;

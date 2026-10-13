@@ -47,7 +47,7 @@ function AdminNav() {
     const links = [
         { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
         { href: "/admin/products", label: "Products", icon: Package },
-        { href: "/admin/listings", label: "Listings", icon: Tag },
+        { href: "/admin/categories", label: "Categories", icon: Tag },
         { href: "/admin/drivers", label: "Drivers", icon: Truck },
     ];
 

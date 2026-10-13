@@ -2,11 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_middleware_1 = require("../../middleware/auth.middleware");
+const admin_middleware_1 = require("../../middleware/admin.middleware");
 const user_controller_1 = require("./user.controller");
 const cloudinary_1 = require("../../config/cloudinary");
 const router = (0, express_1.Router)();
 // Ensure all routes require authentication
 router.use(auth_middleware_1.authMiddleware);
+// === 0. Admin User Management ===
+router.get("/", admin_middleware_1.adminMiddleware, user_controller_1.getUsers);
 // === 1. Profile Management ===
 router.get("/profile", user_controller_1.getProfile);
 router.put("/profile", user_controller_1.updateProfile);

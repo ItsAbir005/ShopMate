@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { authMiddleware } from "../../middleware/auth.middleware";
+import { adminMiddleware } from "../../middleware/admin.middleware";
 import {
     getProfile, updateProfile, uploadProfileImage, changePassword, deleteAccount,
     addAddress, updateAddress, deleteAddress, setDefaultShippingAddress,
-    updateNotificationSettings
+    updateNotificationSettings, getUsers
 } from "./user.controller";
 import { upload } from "../../config/cloudinary";
 
@@ -11,6 +12,9 @@ const router = Router();
 
 // Ensure all routes require authentication
 router.use(authMiddleware);
+
+// === 0. Admin User Management ===
+router.get("/", adminMiddleware as any, getUsers);
 
 // === 1. Profile Management ===
 router.get("/profile", getProfile);

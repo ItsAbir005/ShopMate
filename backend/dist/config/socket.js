@@ -19,11 +19,25 @@ exports.getIO = exports.initSocket = void 0;
 const socket_io_1 = require("socket.io");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const Message_1 = __importDefault(require("../models/Message"));
+const logger_1 = require("../utils/logger");
 let io;
 const initSocket = (httpServer) => {
+    const allowedOrigins = [
+        process.env.FRONTEND_URL?.replace(/\/$/, ""),
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://ecommerce-q1ph.vercel.app',
+    ].filter(Boolean);
     io = new socket_io_1.Server(httpServer, {
         cors: {
-            origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+            origin: (origin, callback) => {
+                if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+                    callback(null, true);
+                }
+                else {
+                    callback(new Error('Not allowed by CORS'));
+                }
+            },
             methods: ['GET', 'POST'],
             credentials: true,
         },
@@ -50,18 +64,18 @@ const initSocket = (httpServer) => {
         // Driver joins their personal room for receiving assignments
         if (role === 'driver' && userId) {
             socket.join(`driver:${userId}`);
-            console.log(`🔌 Driver ${userId} connected to socket`);
+            logger_1.logger.info({ userId }, "[socket] Driver connected to socket");
         }
         // Customer joins order tracking room
         // Client sends: socket.emit('track:order', { orderId })
         socket.on('track:order', ({ orderId }) => {
             socket.join(`order:${orderId}`);
-            console.log(`📍 Client tracking order: ${orderId}`);
+            logger_1.logger.info({ orderId }, "[socket] Client tracking order");
         });
         // Chat logic
         socket.on('join:chat', ({ shipmentId }) => {
             socket.join(`chat:${shipmentId}`);
-            console.log(`💬 User/Driver joined chat:${shipmentId}`);
+            logger_1.logger.info({ shipmentId }, "[socket] User/Driver joined chat");
         });
         socket.on('send:message', async (data) => {
             try {
@@ -77,20 +91,21 @@ const initSocket = (httpServer) => {
                     senderId: finalSenderId || "anonymous",
                     text: data.text
                 });
+                logger_1.logger.info({ shipmentId: data.shipmentId, senderId: finalSenderId }, "[socket] Message sent");
                 // Broadcast to everyone in the room (including sender to confirm)
                 io.to(`chat:${data.shipmentId}`).emit('receive:message', newMessage);
             }
             catch (err) {
-                console.error("Error saving message", err);
+                logger_1.logger.error({ err }, "[socket] Error saving message");
             }
         });
         socket.on('disconnect', () => {
             if (role === 'driver') {
-                console.log(`🔴 Driver ${userId} disconnected`);
+                logger_1.logger.info({ userId }, "[socket] Driver disconnected");
             }
         });
     });
-    console.log('🔌 Socket.io server initialized');
+    logger_1.logger.info("[socket] Socket.io server initialized");
     return io;
 };
 exports.initSocket = initSocket;

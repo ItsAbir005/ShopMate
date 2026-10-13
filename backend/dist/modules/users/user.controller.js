@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateNotificationSettings = exports.setDefaultShippingAddress = exports.deleteAddress = exports.updateAddress = exports.addAddress = exports.deleteAccount = exports.changePassword = exports.uploadProfileImage = exports.updateProfile = exports.getProfile = void 0;
+exports.getUsers = exports.updateNotificationSettings = exports.setDefaultShippingAddress = exports.deleteAddress = exports.updateAddress = exports.addAddress = exports.deleteAccount = exports.changePassword = exports.uploadProfileImage = exports.updateProfile = exports.getProfile = void 0;
 const User_1 = require("../../models/User");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 // === 1. Profile Management ===
@@ -175,4 +175,28 @@ const updateNotificationSettings = async (req, res) => {
     }
 };
 exports.updateNotificationSettings = updateNotificationSettings;
+// === 3. Admin User Management ===
+const getUsers = async (req, res) => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 50));
+        const skip = (page - 1) * limit;
+        const total = await User_1.User.countDocuments();
+        const users = await User_1.User.find()
+            .select("-password")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+        return res.status(200).json({
+            users,
+            total,
+            page,
+            pages: Math.ceil(total / limit) || 1,
+        });
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message || "Server Error fetching users" });
+    }
+};
+exports.getUsers = getUsers;
 //# sourceMappingURL=user.controller.js.map

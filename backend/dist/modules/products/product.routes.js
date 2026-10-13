@@ -9,17 +9,9 @@ const router = (0, express_1.Router)();
 // ── Public routes ────────────────────────────────────────────────────────────
 router.get("/", product_controller_1.getProducts);
 router.get("/:id", product_controller_1.getProductById);
-// ── Customer sell routes ──────────────────────────────────────────────────────
-router.post("/sell", auth_middleware_1.authMiddleware, cloudinary_1.uploadProductImages.array("images", 5), product_controller_1.sellProduct);
-router.get("/my-listings", auth_middleware_1.authMiddleware, product_controller_1.getMySellListings);
-router.delete("/my-listings/:id", auth_middleware_1.authMiddleware, product_controller_1.deleteMyListing);
-// ── Admin listing review routes ───────────────────────────────────────────────
-router.get("/admin/pending", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, product_controller_1.getPendingListings);
-router.patch("/admin/:id/approve", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, product_controller_1.approveListing);
-router.patch("/admin/:id/reject", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, product_controller_1.rejectListing);
 // ── Admin product CRUD routes ─────────────────────────────────────────────────
-router.post("/", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, product_controller_1.createProduct);
-router.put("/:id", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, product_controller_1.updateProduct);
+router.post("/", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, cloudinary_1.uploadProductImages.array("images", 5), product_controller_1.createProduct);
+router.put("/:id", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, cloudinary_1.uploadProductImages.array("images", 5), product_controller_1.updateProduct);
 router.delete("/:id", auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, product_controller_1.deleteProduct);
 exports.default = router;
 //# sourceMappingURL=product.routes.js.map

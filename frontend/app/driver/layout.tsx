@@ -14,27 +14,33 @@ function DriverNav() {
     const isOnline = driver?.status === "online" || driver?.status === "busy";
 
     const handleToggle = async () => {
-        if (!driver) return;
+        if (!driver || toggling) return;
         setToggling(true);
         try {
             if (isOnline) {
                 await setOnlineStatus("offline");
             } else {
-                if (navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        async (pos) => {
-                            await setOnlineStatus("online", pos.coords.latitude, pos.coords.longitude);
-                            setToggling(false);
-                        },
-                        async () => {
-                            await setOnlineStatus("online", 22.5726, 88.3639);
-                            setToggling(false);
-                        }
-                    );
-                    return;
+                let lat = 22.5726;
+                let lng = 88.3639;
+                if (typeof window !== "undefined" && "geolocation" in navigator) {
+                    try {
+                        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                                timeout: 5000,
+                                enableHighAccuracy: true,
+                            });
+                        });
+                        lat = pos.coords.latitude;
+                        lng = pos.coords.longitude;
+                    } catch (geoErr) {
+                        console.warn("[Driver] Geolocation prompt/timeout failed, using fallback:", geoErr);
+                    }
                 }
-                await setOnlineStatus("online", 22.5726, 88.3639);
+                await setOnlineStatus("online", lat, lng);
             }
+        } catch (err: any) {
+            console.error("[Driver] Error toggling status:", err);
+            alert(`Failed to update status: ${err.message || "Server error"}`);
         } finally {
             setToggling(false);
         }

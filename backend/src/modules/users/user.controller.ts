@@ -187,8 +187,36 @@ export const updateNotificationSettings = async (req: AuthRequest, res: Response
 
         if (!user) return res.status(404).json({ message: "User not found" });
 
+
         res.status(200).json({ message: "Notification settings updated", notificationSettings: user.notificationSettings });
     } catch (error) {
         res.status(500).json({ message: "Server Error", error });
     }
 };
+
+// === 3. Admin User Management ===
+
+export const getUsers = async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        const total = await User.countDocuments();
+        const users = await User.find()
+            .select("-password")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        return res.status(200).json({
+            users,
+            total,
+            page,
+            pages: Math.ceil(total / limit) || 1,
+        });
+    } catch (error: any) {
+        return res.status(500).json({ message: error.message || "Server Error fetching users" });
+    }
+};
+

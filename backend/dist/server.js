@@ -7,7 +7,10 @@ require("./instrument");
 const http_1 = __importDefault(require("http"));
 const app_1 = __importDefault(require("./app"));
 const socket_1 = require("./config/socket");
+const envChecklist_1 = require("./utils/envChecklist");
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 4000;
+// Print startup environment checklist
+(0, envChecklist_1.printEnvChecklist)();
 // Create HTTP server from Express app (required for Socket.io)
 const httpServer = http_1.default.createServer(app_1.default);
 // Attach Socket.io to the HTTP server

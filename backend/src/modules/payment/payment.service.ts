@@ -36,6 +36,8 @@ export class PaymentService {
         order.paypalOrderId = paymentResult.paypalOrderId;
         await order.save();
 
+        logger.info({ orderId, paypalOrderId: paymentResult.paypalOrderId }, '[payment] PayPal order created');
+
         return {
             paypalOrderId: paymentResult.paypalOrderId,
         };
@@ -78,6 +80,9 @@ export class PaymentService {
             order.paymentProvider = 'paypal';
             order.paypalCaptureId = captureResult.captureId;
             await order.save();
+
+            logger.info({ orderId: order._id, captureId: captureResult.captureId }, '[payment] PayPal order captured');
+            logger.info({ orderId: order._id, payment_status: order.payment_status, status: order.status }, '[payment] Order status updated');
 
             // Create or update Payment record
             await Payment.findOneAndUpdate(
@@ -133,7 +138,7 @@ export class PaymentService {
         const eventType = verification.eventType;
         const resource = (verification.resource || {}) as PayPalWebhookEventResource;
 
-        logger.info({ eventType, resourceId: resource.id }, 'Processing PayPal webhook event');
+        logger.info({ eventType, resourceId: resource.id }, '[payment] PayPal webhook received');
 
         if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
             const captureId = resource.id;

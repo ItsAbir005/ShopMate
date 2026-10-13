@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-
 import { User, IUser } from "../models/User";
+import { logger } from "../utils/logger";
 
 export interface AuthRequest extends Request {
     user?: IUser;
@@ -37,7 +37,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         req.user = user;
         next();
     } catch (err: any) {
-        console.error("JWT Verification failed:", err.message, "Full Token:", token.substring(0, 20) + "...");
+        logger.warn({ err: err.message }, "[auth] Token verification failed");
         return res.status(401).json({ message: "Token is not valid", error: err.message });
     }
 };
