@@ -3,18 +3,43 @@ import amqplib from 'amqplib';
 const AMQP_URL = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 
 class RabbitMQConfig {
-    connection: any;
-    channel: any;
+    connection: any = null;
+    channel: any = null;
     private connected = false;
+    private connecting = false;
+    private retryTimer: NodeJS.Timeout | null = null;
+
+    isConnected(): boolean {
+        return Boolean(this.connected && this.channel);
+    }
 
     async connect() {
-        if (this.connected && this.channel) return;
+        if (this.isConnected()) return;
+        if (this.connecting) return;
+
+        this.connecting = true;
         try {
             console.log('Connecting to RabbitMQ...');
-            this.connection = await amqplib.connect(AMQP_URL);
+            this.connection = await amqplib.connect(AMQP_URL, { timeout: 10000 });
             this.channel = await this.connection.createChannel();
             this.connected = true;
             console.log('✅ RabbitMQ Connected Successfully');
+
+            if (this.retryTimer) {
+                clearInterval(this.retryTimer);
+                this.retryTimer = null;
+            }
+
+            // Connection lifecycle listeners
+            this.connection.on('error', (err: any) => {
+                console.error('[rabbitmq] Connection error:', err.message);
+                this.handleDisconnect();
+            });
+
+            this.connection.on('close', () => {
+                console.warn('[rabbitmq] Connection closed.');
+                this.handleDisconnect();
+            });
 
             // Define exchanges, queues and bindings
             await this.setupQueues();
@@ -32,12 +57,35 @@ class RabbitMQConfig {
             const { startShipmentWorkers } = await import('../modules/shipping/shipment.subscriber');
             await startShipmentWorkers();
 
-        } catch (error) {
-            console.error('RabbitMQ Connection Error', error);
+        } catch (error: any) {
+            console.warn(`[rabbitmq] NOT CONNECTED - queue features degraded (${error?.message || error})`);
+            this.handleDisconnect();
+        } finally {
+            this.connecting = false;
+        }
+    }
+
+    private handleDisconnect() {
+        this.connected = false;
+        this.channel = null;
+        this.connection = null;
+        this.scheduleRetry();
+    }
+
+    private scheduleRetry() {
+        if (!this.retryTimer) {
+            console.log('[rabbitmq] Will retry connection in 30 seconds...');
+            this.retryTimer = setInterval(() => {
+                if (!this.isConnected() && !this.connecting) {
+                    this.connect();
+                }
+            }, 30000);
         }
     }
 
     private async setupQueues() {
+        if (!this.channel) return;
+
         // ── Topic exchange — routes events by pattern ────────────────────────
         await this.channel.assertExchange('ecommerce_events', 'topic', { durable: true });
 
@@ -75,13 +123,14 @@ class RabbitMQConfig {
 
     /**
      * Publishes an event to the main ecommerce exchange.
+     * Safe: does not throw or block if RabbitMQ is not connected.
      * @param routingKey Event type, e.g., 'order.created', 'payment.success', 'job.send_reminder'
      * @param data Payload
      */
     async publishEvent(routingKey: string, data: any) {
-        if (!this.channel) {
-            console.warn('RabbitMQ channel not ready. Trying to reconnect...');
-            await this.connect();
+        if (!this.isConnected()) {
+            console.warn(`[rabbitmq] Skipped publishing ${routingKey}: NOT CONNECTED`);
+            return;
         }
 
         try {

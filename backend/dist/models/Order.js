@@ -79,6 +79,7 @@ const OrderSchema = new mongoose_1.Schema({
     paypalCaptureId: { type: String },
     cancellation_reason: { type: String },
     cancelled_at: { type: Date },
+    confirmationEmailSent: { type: Boolean, default: false },
 }, { timestamps: true });
 // Index for fast user order lookups
 OrderSchema.index({ user_id: 1, createdAt: -1 });

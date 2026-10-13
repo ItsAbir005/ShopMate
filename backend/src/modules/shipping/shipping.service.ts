@@ -15,6 +15,7 @@ import { Driver } from '../../models/Driver';
 import { findNearestDriver } from '../drivers/driver.service';
 import { rabbitMQ } from '../../config/rabbitmq';
 import { getIO } from '../../config/socket';
+import { logger } from '../../utils/logger';
 
 // ── Valid Status Transitions ───────────────────────────────────────────────────
 const STATUS_TRANSITIONS: Record<ShipmentStatus, ShipmentStatus[]> = {
@@ -34,12 +35,11 @@ export const createShipment = async (orderId: string) => {
     // Idempotent: don't create duplicate shipments
     const existing = await Shipment.findOne({ order_id: orderId });
     if (existing) {
-        console.log(`⚠️  Shipment already exists for order ${orderId}: ${existing.trackingCode}`);
+        logger.info({ orderId, trackingCode: existing.trackingCode }, '[shipping] Shipment already exists for order');
         return existing;
     }
 
-    // For a real system pick-up address would be the warehouse.
-    // Using a placeholder here; update for your actual warehouse address.
+    // Warehouse address placeholder
     const warehouseAddress = {
         street: '123 ShopMate Warehouse',
         city: 'Mumbai',
@@ -53,27 +53,39 @@ export const createShipment = async (orderId: string) => {
         pickupAddress: warehouseAddress,
         deliveryAddress: order.shipping_address,
         estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // +3 days
+        status: 'pending',
     });
 
-    console.log(`📦 Shipment created: ${shipment.trackingCode} for order ${orderId}`);
+    logger.info({ trackingCode: shipment.trackingCode, orderId }, '[shipping] Shipment created');
 
-    // Update order status to 'shipped' (we handle fulfillment now)
-    await Order.findByIdAndUpdate(orderId, { status: 'shipped' });
+    // Attempt in-process driver assignment (fails soft: order stays Paid, shipment stays pending)
+    try {
+        const assigned = await assignDriver(shipment._id.toString());
+        if (!assigned || assigned.status === 'pending') {
+            logger.warn({ shipmentId: shipment._id, orderId }, '[shipping] No available driver assigned; shipment remains pending assignment');
+        }
+    } catch (driverErr: any) {
+        logger.warn({ err: driverErr.message, shipmentId: shipment._id, orderId }, '[shipping] Driver assignment failed soft; shipment remains pending assignment');
+    }
 
-    // Publish event so shipment subscriber can assign a driver
-    await rabbitMQ.publishEvent('shipment.created', {
-        shipmentId: shipment._id.toString(),
-        orderId: orderId,
-        deliveryAddress: order.shipping_address,
-    });
+    // Publish event as extra step only if RabbitMQ is connected
+    if (rabbitMQ.isConnected()) {
+        try {
+            await rabbitMQ.publishEvent('shipment.created', {
+                shipmentId: shipment._id.toString(),
+                orderId: orderId,
+                deliveryAddress: order.shipping_address,
+            });
+        } catch (rmqErr: any) {
+            logger.warn({ err: rmqErr.message, orderId }, '[shipping] RabbitMQ publish shipment.created failed soft');
+        }
+    }
 
     return shipment;
 };
 
 // ── 2. Assign Nearest Driver ──────────────────────────────────────────────────
-// Called by shipment.subscriber when shipment.created event fires.
 // Uses Redis GeoSearch to find nearest available driver.
-// Fallback: warehouse lat/lng (Kolkata default for dev)
 export const assignDriver = async (
     shipmentId: string,
     pickupLat: number = 22.5726,
@@ -87,7 +99,7 @@ export const assignDriver = async (
     const driverId = await findNearestDriver(pickupLat, pickupLng, 5000, rejectedByIds);
 
     if (!driverId) {
-        console.warn(`⚠️  No available drivers for shipment ${shipmentId} within 5000km. Will retry later.`);
+        logger.warn({ shipmentId, pickupLat, pickupLng }, '[shipping] No available drivers within radius; shipment remains pending assignment');
         return shipment;
     }
 
@@ -101,15 +113,19 @@ export const assignDriver = async (
     await Driver.findByIdAndUpdate(driverId, { status: 'busy', isAvailable: false });
 
     // Notify driver via Socket.io (room: driver:<id>)
-    const io = getIO();
-    io.to(`driver:${driverId}`).emit('delivery:assigned', {
-        shipmentId: shipment._id.toString(),
-        trackingCode: shipment.trackingCode,
-        deliveryAddress: shipment.deliveryAddress,
-        otp: shipment.otp,
-    });
+    try {
+        const io = getIO();
+        io.to(`driver:${driverId}`).emit('delivery:assigned', {
+            shipmentId: shipment._id.toString(),
+            trackingCode: shipment.trackingCode,
+            deliveryAddress: shipment.deliveryAddress,
+            otp: shipment.otp,
+        });
+    } catch (socketErr: any) {
+        logger.warn({ err: socketErr.message, driverId }, '[shipping] Socket notify driver failed soft');
+    }
 
-    console.log(`🚗 Driver ${driverId} assigned to shipment ${shipment.trackingCode}`);
+    logger.info({ driverId, trackingCode: shipment.trackingCode }, '[shipping] Driver assigned to shipment');
     return shipment;
 };
 

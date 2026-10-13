@@ -76,7 +76,7 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
 app.get("/api/health", async (_req: express.Request, res: express.Response) => {
     const mongoStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
     const redisStatus = redisClient.isOpen ? "connected" : "disconnected";
-    const rabbitStatus = rabbitMQ.channel ? "connected" : "disconnected";
+    const rabbitConnected = rabbitMQ.isConnected();
     const cloudinaryStatus = process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
         ? "configured"
         : "missing";
@@ -88,7 +88,7 @@ app.get("/api/health", async (_req: express.Request, res: express.Response) => {
         ok,
         mongo: mongoStatus,
         redis: redisStatus,
-        rabbitmq: rabbitStatus,
+        rabbitmq: rabbitConnected,
         cloudinary: cloudinaryStatus,
         uptime: process.uptime(),
     });

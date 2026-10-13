@@ -38,6 +38,7 @@ export interface IOrder extends Document {
     paypalCaptureId?: string;
     cancellation_reason?: string;
     cancelled_at?: Date;
+    confirmationEmailSent?: boolean;
 }
 
 const OrderItemSchema = new Schema({
@@ -87,6 +88,7 @@ const OrderSchema = new Schema(
         paypalCaptureId: { type: String },
         cancellation_reason: { type: String },
         cancelled_at: { type: Date },
+        confirmationEmailSent: { type: Boolean, default: false },
     },
     { timestamps: true }
 );

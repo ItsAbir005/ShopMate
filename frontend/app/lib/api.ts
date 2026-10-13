@@ -2,10 +2,10 @@ import { logger } from "./logger";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
-type FetchOptions = RequestInit & { token?: string };
+type FetchOptions = RequestInit & { token?: string; silent?: boolean };
 
 export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
-    const { token: overrideToken, ...fetchOptions } = options;
+    const { token: overrideToken, silent = false, ...fetchOptions } = options;
     const token = overrideToken || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
 
     const headers = {
@@ -37,22 +37,24 @@ export async function fetchApi(endpoint: string, options: FetchOptions = {}) {
         const baseMessage = data.message || "An error occurred";
         const detailedMessage = serverReqId ? `${baseMessage} (Req ID: ${serverReqId})` : baseMessage;
 
-        logger.error(`API Error ${response.status} on ${endpoint}: ${baseMessage}`, {
-            status: response.status,
-            requestId: serverReqId,
-            data,
-        });
+        if (!silent) {
+            logger.error(`API Error ${response.status} on ${endpoint}: ${baseMessage}`, {
+                status: response.status,
+                requestId: serverReqId,
+                data,
+            });
 
-        // Broadcast global API error so UI toast listener can display it
-        if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("shopmate:api-error", {
-                detail: {
-                    message: detailedMessage,
-                    rawMessage: baseMessage,
-                    requestId: serverReqId,
-                    status: response.status,
-                }
-            }));
+            // Broadcast global API error so UI toast listener can display it
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("shopmate:api-error", {
+                    detail: {
+                        message: detailedMessage,
+                        rawMessage: baseMessage,
+                        requestId: serverReqId,
+                        status: response.status,
+                    }
+                }));
+            }
         }
 
         if (response.status === 401) {

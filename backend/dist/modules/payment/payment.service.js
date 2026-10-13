@@ -36,11 +36,92 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentService = void 0;
 const Payment_1 = require("../../models/Payment");
 const Order_1 = require("../../models/Order");
+const User_1 = require("../../models/User");
+const Notification_1 = require("../../models/Notification");
 const rabbitmq_1 = require("../../config/rabbitmq");
 const paypal_provider_1 = require("./providers/paypal.provider");
+const shipping_service_1 = require("../shipping/shipping.service");
+const mail_service_1 = require("../mail/mail.service");
 const logger_1 = require("../../utils/logger");
 const payPalProvider = new paypal_provider_1.PayPalProvider();
 class PaymentService {
+    /**
+     * Run in-process post-payment actions:
+     * 1. Create shipment for order if none exists (fails soft).
+     * 2. Send payment confirmation email (idempotent via order.confirmationEmailSent).
+     * 3. Create notification for payment (idempotent by checking existing notification).
+     * 4. Publish payment.success to RabbitMQ ONLY if connected.
+     * All steps wrapped in separate try/catch so failure in one never blocks the others or payment.
+     */
+    static async runPostPaymentProcessing(orderInput) {
+        const orderId = orderInput?._id ? orderInput._id.toString() : orderInput?.toString();
+        if (!orderId)
+            return;
+        const order = await Order_1.Order.findById(orderId);
+        if (!order) {
+            logger_1.logger.warn({ orderId }, '[payment] Order not found for post-payment processing');
+            return;
+        }
+        // 1. Create shipment directly in-process if none exists
+        try {
+            await (0, shipping_service_1.createShipment)(order._id.toString());
+        }
+        catch (shipmentErr) {
+            logger_1.logger.warn({ err: shipmentErr.message, orderId: order._id }, '[shipping] In-process shipment creation failed soft');
+        }
+        // 2. Send confirmation email (idempotent via confirmationEmailSent)
+        try {
+            const freshOrder = await Order_1.Order.findById(order._id);
+            if (freshOrder && !freshOrder.confirmationEmailSent) {
+                const user = await User_1.User.findById(order.user_id);
+                if (user?.email && user?.notificationSettings?.email !== false) {
+                    await (0, mail_service_1.sendPaymentSuccessEmail)(user.email, user.name || 'Customer', order._id.toString(), order.total_amount);
+                }
+                freshOrder.confirmationEmailSent = true;
+                await freshOrder.save();
+                logger_1.logger.info({ orderId: order._id }, '[mail] Confirmation email sent and marked');
+            }
+        }
+        catch (emailErr) {
+            logger_1.logger.warn({ err: emailErr.message, orderId: order._id }, '[mail] Post-payment confirmation email failed soft');
+        }
+        // 3. Create notification (idempotent by checking existing notification)
+        try {
+            const existingNotif = await Notification_1.Notification.findOne({
+                type: 'GENERAL',
+                relatedId: order._id,
+            });
+            if (!existingNotif) {
+                await Notification_1.Notification.create({
+                    type: 'GENERAL',
+                    message: `Payment confirmed for Order #${order._id.toString().slice(-8).toUpperCase()} ($${order.total_amount.toFixed(2)})`,
+                    relatedId: order._id,
+                    metadata: {
+                        orderId: order._id.toString(),
+                        amount: order.total_amount,
+                        userId: order.user_id.toString(),
+                    },
+                });
+                logger_1.logger.info({ orderId: order._id }, '[notification] Post-payment notification created');
+            }
+        }
+        catch (notifErr) {
+            logger_1.logger.warn({ err: notifErr.message, orderId: order._id }, '[notification] Post-payment notification failed soft');
+        }
+        // 4. Publish payment.success to RabbitMQ if connected
+        if (rabbitmq_1.rabbitMQ.isConnected()) {
+            try {
+                await rabbitmq_1.rabbitMQ.publishEvent('payment.success', {
+                    orderId: order._id.toString(),
+                    userId: order.user_id.toString(),
+                    amount: order.total_amount,
+                });
+            }
+            catch (rmqErr) {
+                logger_1.logger.warn({ err: rmqErr.message, orderId: order._id }, '[rabbitmq] Failed to publish payment.success soft');
+            }
+        }
+    }
     // ─── Provider Accessors ───────────────────────────────────────────────────
     static getPayPalProvider() {
         return payPalProvider;
@@ -84,8 +165,9 @@ class PaymentService {
         if (!isAdmin && order.user_id.toString() !== userId) {
             throw new Error('Unauthorized to capture payment for this order');
         }
-        // Idempotency: if already paid, return success immediately
+        // Idempotency: if already paid, ensure post-processing tasks ran and return success immediately
         if (order.payment_status === 'paid') {
+            await PaymentService.runPostPaymentProcessing(order);
             return {
                 success: true,
                 orderId: order._id.toString(),
@@ -113,12 +195,8 @@ class PaymentService {
                 currency: 'usd',
                 status: 'successful',
             }, { upsert: true, new: true });
-            // Publish payment.success to RabbitMQ
-            await rabbitmq_1.rabbitMQ.publishEvent('payment.success', {
-                orderId: order._id.toString(),
-                userId: order.user_id.toString(),
-                amount: order.total_amount,
-            });
+            // Execute in-process post-payment tasks (shipment, email, notification, RabbitMQ if connected)
+            await PaymentService.runPostPaymentProcessing(order);
             // Notify Socket.IO
             try {
                 const { getIO } = await Promise.resolve().then(() => __importStar(require('../../config/socket')));
@@ -166,6 +244,7 @@ class PaymentService {
             }
             if (order) {
                 if (order.payment_status === 'paid') {
+                    await PaymentService.runPostPaymentProcessing(order);
                     return { received: true, message: 'Order already marked as paid' };
                 }
                 order.payment_status = 'paid';
@@ -182,11 +261,8 @@ class PaymentService {
                     currency: 'usd',
                     status: 'successful',
                 }, { upsert: true, new: true });
-                await rabbitmq_1.rabbitMQ.publishEvent('payment.success', {
-                    orderId: order._id.toString(),
-                    userId: order.user_id.toString(),
-                    amount: order.total_amount,
-                });
+                // Execute in-process post-payment tasks (shipment, email, notification, RabbitMQ if connected)
+                await PaymentService.runPostPaymentProcessing(order);
                 try {
                     const { getIO } = await Promise.resolve().then(() => __importStar(require('../../config/socket')));
                     getIO().to(`order:${order._id.toString()}`).emit('status:changed', {

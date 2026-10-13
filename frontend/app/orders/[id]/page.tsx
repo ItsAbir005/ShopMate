@@ -29,6 +29,7 @@ type OrderDetail = {
     status: string;
     payment_status: string;
     paymentProvider?: string;
+    confirmationEmailSent?: boolean;
     total_amount: number;
     subtotal: number;
     discount_amount: number;
@@ -104,34 +105,48 @@ export default function OrderDetailPage() {
 
     useEffect(() => {
         if (!user || !id) return;
+        let isMounted = true;
 
         const loadOrderData = async () => {
             try {
-                if (paymentSuccess) {
-                    try {
-                        await fetchApi(`/payments/verify/${id}`);
-                    } catch (err) {
-                        console.error("Payment verification fallback failed:", err);
+                let data = await fetchApi(`/orders/${id}`);
+
+                // If redirected with ?payment=success but order still shows unpaid,
+                // retry 1-2 times with brief delay to let webhook/capture complete
+                if (paymentSuccess && data.payment_status !== "paid") {
+                    for (let attempt = 0; attempt < 2; attempt++) {
+                        await new Promise((resolve) => setTimeout(resolve, 1500));
+                        if (!isMounted) return;
+                        const refetched = await fetchApi(`/orders/${id}`);
+                        if (refetched.payment_status === "paid") {
+                            data = refetched;
+                            break;
+                        }
                     }
                 }
 
-                const data = await fetchApi(`/orders/${id}`);
+                if (!isMounted) return;
                 setOrder(data);
 
+                // Fetch shipment silently so a 404 does not log errors or pop up toasts
                 try {
-                    const shipData = await fetchApi(`/shipping/order/${id}`);
-                    setShipment(shipData);
+                    const shipData = await fetchApi(`/shipping/order/${id}`, { silent: true });
+                    if (isMounted) setShipment(shipData);
                 } catch {
-                    // No shipment yet
+                    if (isMounted) setShipment(null);
                 }
             } catch (err) {
-                setError("Order not found.");
+                if (isMounted) setError("Order not found.");
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         };
 
         loadOrderData();
+
+        return () => {
+            isMounted = false;
+        };
     }, [user, id, paymentSuccess]);
 
     const handleCancel = async () => {
@@ -264,16 +279,24 @@ export default function OrderDetailPage() {
                             <span>Inventory reserved</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Mail className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Confirmation email sent</span>
+                            {order.confirmationEmailSent ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                                <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                            )}
+                            <span>{order.confirmationEmailSent ? "Confirmation email sent" : "Email in progress"}</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
                             <span>Payment verified</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Truck className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Fulfillment queued</span>
+                            {shipment ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                                <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                            )}
+                            <span>{shipment ? "Fulfillment queued" : "Preparing fulfillment"}</span>
                         </div>
                     </div>
                 </div>
@@ -283,6 +306,24 @@ export default function OrderDetailPage() {
                 <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs font-medium flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>Payment was cancelled. You can retry paying below whenever you are ready.</span>
+                </div>
+            )}
+
+            {/* Preparing Shipment Card (when paid but shipment not yet loaded or pending creation) */}
+            {!shipment && order.payment_status === "paid" && !['cancelled', 'returned'].includes(order.status) && (
+                <div className="mb-6 bg-white border border-gray-200 rounded-xl p-5 shadow-xs flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                            <Truck className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div>
+                            <p className="font-semibold text-gray-900 text-sm">Preparing your shipment</p>
+                            <p className="text-xs text-gray-500">Your order has been paid. We are assigning a delivery driver and packing your items.</p>
+                        </div>
+                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                        Preparing
+                    </span>
                 </div>
             )}
 

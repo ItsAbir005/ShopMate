@@ -1,14 +1,15 @@
 import { rabbitMQ } from '../../config/rabbitmq';
 import { Order } from '../../models/Order';
 import { User } from '../../models/User';
+import { Shipment } from '../../models/Shipment';
 import { ConsumeMessage } from 'amqplib';
 import { sendPaymentSuccessEmail } from '../mail/mail.service';
 
 /**
  * Listens to payment_queue for payment.success events.
  * Responsibilities:
- *   - Send payment confirmation email to user
- *   - Trigger shipping initiation job
+ *   - Send payment confirmation email to user (idempotent, checks confirmationEmailSent)
+ *   - Trigger shipping initiation job (idempotent, checks if shipment already exists)
  */
 export const startPaymentWorkers = async () => {
     try {
@@ -37,27 +38,38 @@ export const startPaymentWorkers = async () => {
                         return;
                     }
 
-                    // Fetch user for email — wrapped separately so SMTP failure
-                    // doesn't nack the message and cause an infinite retry loop
-                    const user = await User.findById(order.user_id);
-                    if (user?.email && user?.notificationSettings?.email !== false) {
-                        try {
-                            await sendPaymentSuccessEmail(
-                                user.email,
-                                user.name,
-                                order._id.toString(),
-                                order.total_amount
-                            );
-                        } catch (emailErr: any) {
-                            console.error(`⚠️  Payment email failed for order ${data.orderId}:`, emailErr.message);
+                    // Fetch user for email — only if not already sent
+                    if (!order.confirmationEmailSent) {
+                        const user = await User.findById(order.user_id);
+                        if (user?.email && user?.notificationSettings?.email !== false) {
+                            try {
+                                await sendPaymentSuccessEmail(
+                                    user.email,
+                                    user.name,
+                                    order._id.toString(),
+                                    order.total_amount
+                                );
+                                order.confirmationEmailSent = true;
+                                await order.save();
+                            } catch (emailErr: any) {
+                                console.error(`⚠️  Payment email failed for order ${data.orderId}:`, emailErr.message);
+                            }
                         }
+                    } else {
+                        console.log(`ℹ️  Confirmation email already sent for order ${data.orderId}`);
                     }
 
-                    // Publish downstream job: initiate shipping
-                    await rabbitMQ.publishEvent('job.shipping_initiated', {
-                        orderId: order._id.toString(),
-                        userId: order.user_id.toString(),
-                    });
+                    // Avoid double work: if shipment already exists, skip publishing job.shipping_initiated
+                    const existingShipment = await Shipment.findOne({ order_id: order._id });
+                    if (!existingShipment) {
+                        // Publish downstream job: initiate shipping
+                        await rabbitMQ.publishEvent('job.shipping_initiated', {
+                            orderId: order._id.toString(),
+                            userId: order.user_id.toString(),
+                        });
+                    } else {
+                        console.log(`ℹ️  Shipment already exists for order ${data.orderId}, skipping job.shipping_initiated`);
+                    }
 
                     rabbitMQ.channel.ack(msg);
                     console.log(`✅ Payment success processed for order: ${data.orderId}`);
