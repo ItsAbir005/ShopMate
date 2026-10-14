@@ -13,7 +13,8 @@ import {
     ArrowRight,
     Lock,
     Store,
-    ShieldCheck
+    ShieldCheck,
+    Sparkles
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
@@ -162,7 +163,9 @@ export default function AdminDashboard() {
 
             {/* Quick Links */}
             <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <QuickLink href="/admin/copilot" icon={Sparkles} label="Merchant AI Copilot" desc="Chat with PayPal Agent Toolkit & insights" />
+                <QuickLink href="/admin/orders" icon={ClipboardList} label="Orders & AI Risk" desc="View orders with Gemini fraud screening" />
                 <QuickLink href="/admin/products" icon={Package} label="Manage Products" desc="Add, edit or delete products" />
                 <QuickLink href="/admin/drivers" icon={Truck} label="Manage Drivers" desc="View and block driver accounts" />
                 <QuickLink href="/admin/register" icon={Lock} label="Create Admin Account" desc="Add another admin with secret key" />

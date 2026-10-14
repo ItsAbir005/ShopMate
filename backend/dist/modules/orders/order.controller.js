@@ -99,7 +99,8 @@ const getAllOrders = async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const status = req.query.status;
         const userId = req.query.userId;
-        const result = await OrderService.getAllOrders(page, limit, status, userId);
+        const aiRisk = req.query.aiRisk;
+        const result = await OrderService.getAllOrders(page, limit, status, userId, aiRisk);
         return res.json(result);
     }
     catch (err) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ShieldCheck, LayoutDashboard, Package, Tag, Truck, Bell, User, LogOut } from "lucide-react";
+import { ShieldCheck, LayoutDashboard, Package, Tag, Truck, Bell, User, LogOut, ClipboardList, Sparkles } from "lucide-react";
 
 function AdminNav() {
     const pathname = usePathname();
@@ -46,9 +46,11 @@ function AdminNav() {
 
     const links = [
         { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/admin/orders", label: "Orders", icon: ClipboardList },
         { href: "/admin/products", label: "Products", icon: Package },
         { href: "/admin/categories", label: "Categories", icon: Tag },
         { href: "/admin/drivers", label: "Drivers", icon: Truck },
+        { href: "/admin/copilot", label: "AI Copilot", icon: Sparkles },
     ];
 
     return (
@@ -61,7 +63,7 @@ function AdminNav() {
                 </Link>
 
                 {/* Nav links */}
-                <div className="flex items-center gap-1 sm:gap-2 flex-1 max-w-xl">
+                <div className="flex items-center gap-1 sm:gap-2 flex-1 max-w-2xl overflow-x-auto">
                     {links.map(({ href, label, icon: Icon }) => {
                         const active = pathname === href || (href !== "/admin" && pathname.startsWith(href));
                         return (

@@ -18,6 +18,7 @@ import shippingRoutes from "./modules/shipping/shipping.routes";
 import driverRoutes from "./modules/drivers/driver.routes";
 import notificationRoutes from "./modules/notifications/notification.routes";
 import chatRoutes from "./modules/chat/chat.routes";
+import aiRoutes from "./modules/ai/ai.routes";
 import * as Sentry from "@sentry/node";
 
 dotenv.config();
@@ -80,6 +81,8 @@ app.get("/api/health", async (_req: express.Request, res: express.Response) => {
     const cloudinaryStatus = process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
         ? "configured"
         : "missing";
+    const aiAvailable = Boolean(process.env.GEMINI_API_KEY);
+    const paypalToolkitAvailable = Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
 
     const ok = mongoStatus === "connected";
     const httpStatus = ok ? 200 : 503;
@@ -90,6 +93,8 @@ app.get("/api/health", async (_req: express.Request, res: express.Response) => {
         redis: redisStatus,
         rabbitmq: rabbitConnected,
         cloudinary: cloudinaryStatus,
+        ai: aiAvailable,
+        paypalToolkit: paypalToolkitAvailable,
         uptime: process.uptime(),
     });
 });
@@ -114,6 +119,7 @@ app.use("/api/shipping", shippingRoutes);
 app.use("/api/drivers", driverRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/ai", aiRoutes);
 
 app.get("/api/debug-sentry", function mainHandler(_req: express.Request, _res: express.Response) {
     throw new Error("My first Sentry error!");

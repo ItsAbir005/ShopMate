@@ -188,6 +188,14 @@ export const confirmDelivery = async (
     // Update order to delivered
     await Order.findByIdAndUpdate(shipment.order_id, { status: 'delivered' });
 
+    // Sync delivery tracking to PayPal (idempotent, soft-fail with [paypal] warn log)
+    try {
+        const { syncDeliveryTrackingToPayPal } = await import('../ai/ai.service');
+        await syncDeliveryTrackingToPayPal(shipment._id.toString());
+    } catch (syncErr: any) {
+        logger.warn({ err: syncErr.message, shipmentId }, '[paypal] Failed to sync delivery tracking to PayPal');
+    }
+
     // Release driver back to available
     await Driver.findByIdAndUpdate(driverId, { status: 'online', isAvailable: true });
 

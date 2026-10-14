@@ -64,7 +64,8 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<any
         const limit = parseInt(req.query.limit as string) || 20;
         const status = req.query.status as string | undefined;
         const userId = req.query.userId as string | undefined;
-        const result = await OrderService.getAllOrders(page, limit, status, userId);
+        const aiRisk = req.query.aiRisk as string | undefined;
+        const result = await OrderService.getAllOrders(page, limit, status, userId, aiRisk);
         return res.json(result);
     } catch (err: any) {
         return res.status(500).json({ message: err.message });

@@ -141,13 +141,35 @@ class PaymentService {
         if (order.payment_status === 'paid') {
             throw new Error('Order is already paid');
         }
+        // Run AI Risk Evaluation before creating PayPal order (soft fallback, never blocks checkout)
+        try {
+            const { evaluateOrderRisk } = await Promise.resolve().then(() => __importStar(require('../ai/ai.service')));
+            const riskResult = await evaluateOrderRisk(order);
+            order.aiRisk = {
+                decision: riskResult.decision,
+                reason: riskResult.reason,
+                checkedAt: new Date(),
+                signals: riskResult.signals,
+            };
+            await order.save();
+        }
+        catch (riskErr) {
+            logger_1.logger.warn({ err: riskErr.message, orderId }, '[ai] Order risk evaluation failed soft, defaulting to approve');
+            order.aiRisk = {
+                decision: 'approve',
+                reason: 'AI unavailable',
+                checkedAt: new Date(),
+            };
+            await order.save();
+        }
         const paymentResult = await payPalProvider.createPayment(order);
         order.paymentProvider = 'paypal';
         order.paypalOrderId = paymentResult.paypalOrderId;
         await order.save();
-        logger_1.logger.info({ orderId, paypalOrderId: paymentResult.paypalOrderId }, '[payment] PayPal order created');
+        logger_1.logger.info({ orderId, paypalOrderId: paymentResult.paypalOrderId, aiRisk: order.aiRisk?.decision }, '[payment] PayPal order created');
         return {
             paypalOrderId: paymentResult.paypalOrderId,
+            aiRisk: order.aiRisk,
         };
     }
     /**

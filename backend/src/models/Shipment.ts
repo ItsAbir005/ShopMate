@@ -21,6 +21,7 @@ export interface IShipment extends Document {
     deliveredAt?: Date;
     failureReason?: string;
     rejectedBy?: mongoose.Types.ObjectId[];
+    paypalTrackingSynced?: boolean;
     pickupAddress: {
         street: string; city: string; state: string; zip: string; country: string;
     };
@@ -63,6 +64,7 @@ const ShipmentSchema = new Schema(
         deliveredAt: { type: Date },
         failureReason: { type: String },
         rejectedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Driver' }],
+        paypalTrackingSynced: { type: Boolean, default: false },
         pickupAddress: { type: AddressSchema, required: true },
         deliveryAddress: { type: AddressSchema, required: true },
     },

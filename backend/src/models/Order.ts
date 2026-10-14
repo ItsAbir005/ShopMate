@@ -22,6 +22,18 @@ export interface IShippingAddress {
 export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'delivered' | 'cancelled' | 'returned';
 export type PaymentStatus = 'unpaid' | 'paid' | 'refunded';
 
+export interface IOrderAiRisk {
+    decision: 'approve' | 'review' | 'flag';
+    reason: string;
+    checkedAt: Date;
+    signals?: {
+        orderTotal: number;
+        accountAgeDays: number;
+        ordersInLastHour: number;
+        addressChanges: number;
+    };
+}
+
 export interface IOrder extends Document {
     user_id: mongoose.Types.ObjectId;
     order_items: IOrderItem[];
@@ -39,6 +51,7 @@ export interface IOrder extends Document {
     cancellation_reason?: string;
     cancelled_at?: Date;
     confirmationEmailSent?: boolean;
+    aiRisk?: IOrderAiRisk;
 }
 
 const OrderItemSchema = new Schema({
@@ -89,6 +102,17 @@ const OrderSchema = new Schema(
         cancellation_reason: { type: String },
         cancelled_at: { type: Date },
         confirmationEmailSent: { type: Boolean, default: false },
+        aiRisk: {
+            decision: { type: String, enum: ['approve', 'review', 'flag'], default: 'approve' },
+            reason: { type: String, default: 'AI unavailable' },
+            checkedAt: { type: Date, default: Date.now },
+            signals: {
+                orderTotal: { type: Number },
+                accountAgeDays: { type: Number },
+                ordersInLastHour: { type: Number },
+                addressChanges: { type: Number },
+            },
+        },
     },
     { timestamps: true }
 );
@@ -96,5 +120,6 @@ const OrderSchema = new Schema(
 // Index for fast user order lookups
 OrderSchema.index({ user_id: 1, createdAt: -1 });
 OrderSchema.index({ status: 1 });
+OrderSchema.index({ 'aiRisk.decision': 1 });
 
 export const Order = mongoose.model<IOrder>('Order', OrderSchema);

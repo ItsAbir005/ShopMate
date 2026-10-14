@@ -211,12 +211,14 @@ const cancelOrder = async (orderId, userId, reason) => {
 };
 exports.cancelOrder = cancelOrder;
 // ── 5. Admin — Get All Orders ─────────────────────────────────────────────────
-const getAllOrders = async (page = 1, limit = 20, status, userId) => {
+const getAllOrders = async (page = 1, limit = 20, status, userId, aiRisk) => {
     const query = {};
     if (status)
         query.status = status;
     if (userId)
         query.user_id = userId;
+    if (aiRisk)
+        query['aiRisk.decision'] = aiRisk;
     const total = await Order_1.Order.countDocuments(query);
     const orders = await Order_1.Order.find(query)
         .populate('user_id', 'name email')

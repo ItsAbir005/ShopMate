@@ -80,9 +80,21 @@ const OrderSchema = new mongoose_1.Schema({
     cancellation_reason: { type: String },
     cancelled_at: { type: Date },
     confirmationEmailSent: { type: Boolean, default: false },
+    aiRisk: {
+        decision: { type: String, enum: ['approve', 'review', 'flag'], default: 'approve' },
+        reason: { type: String, default: 'AI unavailable' },
+        checkedAt: { type: Date, default: Date.now },
+        signals: {
+            orderTotal: { type: Number },
+            accountAgeDays: { type: Number },
+            ordersInLastHour: { type: Number },
+            addressChanges: { type: Number },
+        },
+    },
 }, { timestamps: true });
 // Index for fast user order lookups
 OrderSchema.index({ user_id: 1, createdAt: -1 });
 OrderSchema.index({ status: 1 });
+OrderSchema.index({ 'aiRisk.decision': 1 });
 exports.Order = mongoose_1.default.model('Order', OrderSchema);
 //# sourceMappingURL=Order.js.map

@@ -56,6 +56,7 @@ const shipping_routes_1 = __importDefault(require("./modules/shipping/shipping.r
 const driver_routes_1 = __importDefault(require("./modules/drivers/driver.routes"));
 const notification_routes_1 = __importDefault(require("./modules/notifications/notification.routes"));
 const chat_routes_1 = __importDefault(require("./modules/chat/chat.routes"));
+const ai_routes_1 = __importDefault(require("./modules/ai/ai.routes"));
 const Sentry = __importStar(require("@sentry/node"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -111,6 +112,8 @@ app.get("/api/health", async (_req, res) => {
     const cloudinaryStatus = process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
         ? "configured"
         : "missing";
+    const aiAvailable = Boolean(process.env.GEMINI_API_KEY);
+    const paypalToolkitAvailable = Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
     const ok = mongoStatus === "connected";
     const httpStatus = ok ? 200 : 503;
     return res.status(httpStatus).json({
@@ -119,6 +122,8 @@ app.get("/api/health", async (_req, res) => {
         redis: redisStatus,
         rabbitmq: rabbitConnected,
         cloudinary: cloudinaryStatus,
+        ai: aiAvailable,
+        paypalToolkit: paypalToolkitAvailable,
         uptime: process.uptime(),
     });
 });
@@ -140,6 +145,7 @@ app.use("/api/shipping", shipping_routes_1.default);
 app.use("/api/drivers", driver_routes_1.default);
 app.use("/api/notifications", notification_routes_1.default);
 app.use("/api/chat", chat_routes_1.default);
+app.use("/api/ai", ai_routes_1.default);
 app.get("/api/debug-sentry", function mainHandler(_req, _res) {
     throw new Error("My first Sentry error!");
 });

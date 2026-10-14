@@ -20,6 +20,8 @@ export interface IUser extends Document {
         push: boolean;
     };
     role: 'user' | 'admin';
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 const AddressSchema = new Schema({

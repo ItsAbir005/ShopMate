@@ -250,10 +250,11 @@ export const cancelOrder = async (orderId: string, userId: string, reason?: stri
 };
 
 // ── 5. Admin — Get All Orders ─────────────────────────────────────────────────
-export const getAllOrders = async (page = 1, limit = 20, status?: string, userId?: string) => {
+export const getAllOrders = async (page = 1, limit = 20, status?: string, userId?: string, aiRisk?: string) => {
     const query: any = {};
     if (status) query.status = status;
     if (userId) query.user_id = userId;
+    if (aiRisk) query['aiRisk.decision'] = aiRisk;
 
     const total = await Order.countDocuments(query);
     const orders = await Order.find(query)
