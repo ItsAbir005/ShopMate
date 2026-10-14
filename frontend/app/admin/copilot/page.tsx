@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import { fetchApi } from "../../lib/api";
 import {
     Sparkles,
@@ -22,6 +23,8 @@ import {
 interface ToolCallInfo {
     toolName: string;
     summary: string;
+    resultCount?: number;
+    subtitle?: string;
 }
 
 interface ProposedAction {
@@ -231,22 +234,78 @@ export default function AdminCopilotPage() {
                                             : "bg-white border border-gray-200 text-gray-900 rounded-bl-xs shadow-xs"
                                     }`}
                                 >
-                                    <div className="whitespace-pre-wrap">{m.text}</div>
+                                    {isUser ? (
+                                        <div className="whitespace-pre-wrap">{m.text}</div>
+                                    ) : (
+                                        <div className="prose prose-sm max-w-none text-gray-900 leading-relaxed break-words">
+                                            <ReactMarkdown
+                                                components={{
+                                                    p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                                                    ul: ({ node, ...props }) => <ul className="list-disc pl-5 my-2 space-y-1 text-gray-800" {...props} />,
+                                                    ol: ({ node, ...props }) => <ol className="list-decimal pl-5 my-2 space-y-1 text-gray-800" {...props} />,
+                                                    li: ({ node, ...props }) => <li className="my-0.5" {...props} />,
+                                                    strong: ({ node, ...props }) => <strong className="font-semibold text-gray-950" {...props} />,
+                                                    em: ({ node, ...props }) => <em className="italic text-gray-800" {...props} />,
+                                                    code: ({ node, ...props }: any) => {
+                                                        const isInline = !String(props.children).includes("\n");
+                                                        return isInline ? (
+                                                            <code className="px-1.5 py-0.5 rounded bg-gray-100 font-mono text-xs text-indigo-700 font-semibold" {...props} />
+                                                        ) : (
+                                                            <pre className="p-2.5 rounded-lg bg-gray-900 text-gray-100 font-mono text-xs overflow-x-auto my-2">
+                                                                <code {...props} />
+                                                            </pre>
+                                                        );
+                                                    },
+                                                    table: ({ node, ...props }) => (
+                                                        <div className="overflow-x-auto my-2.5">
+                                                            <table className="min-w-full divide-y divide-gray-200 border border-gray-200 text-xs rounded-lg overflow-hidden" {...props} />
+                                                        </div>
+                                                    ),
+                                                    thead: ({ node, ...props }) => <thead className="bg-gray-50" {...props} />,
+                                                    th: ({ node, ...props }) => <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-200" {...props} />,
+                                                    td: ({ node, ...props }) => <td className="px-3 py-2 border-b border-gray-100 text-gray-800" {...props} />,
+                                                }}
+                                            >
+                                                {m.text}
+                                            </ReactMarkdown>
+                                        </div>
+                                    )}
 
-                                    {/* Tool Calls Summary Pill (Requirement 1: Show which PayPal tool was called) */}
+                                    {/* Tool Calls Summary & Subtitle Badges */}
                                     {m.toolCalls && m.toolCalls.length > 0 && (
-                                        <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-1.5">
-                                            {m.toolCalls.map((tc, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-gray-50 border border-gray-200 text-xs text-gray-600 mr-2"
-                                                >
-                                                    <Wrench className="w-3 h-3 text-indigo-600 shrink-0" />
-                                                    <span className="font-mono font-semibold text-gray-800">{tc.toolName}</span>
-                                                    <span className="text-gray-400">·</span>
-                                                    <span>{tc.summary}</span>
-                                                </div>
-                                            ))}
+                                        <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-2">
+                                            {m.toolCalls.map((tc, idx) => {
+                                                let subtitle = tc.subtitle;
+                                                if (!subtitle && tc.resultCount !== undefined) {
+                                                    subtitle = `PayPal returned ${tc.resultCount} ${tc.toolName === "list_transactions" ? "transactions" : "items"}`;
+                                                } else if (!subtitle && tc.summary) {
+                                                    if (tc.summary.includes("Retrieved") && tc.summary.includes("transactions")) {
+                                                        subtitle = tc.summary.replace("Retrieved", "PayPal returned");
+                                                    } else if (tc.summary.includes("Found") && tc.summary.includes("invoices")) {
+                                                        subtitle = tc.summary.replace("Found", "PayPal returned");
+                                                    }
+                                                }
+
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        className="flex flex-col gap-1 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-700"
+                                                    >
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <Wrench className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                            <span className="font-mono font-semibold text-gray-800">{tc.toolName}</span>
+                                                            <span className="text-gray-400">·</span>
+                                                            <span className="text-gray-600">{tc.summary}</span>
+                                                        </div>
+                                                        {subtitle && (
+                                                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded w-fit mt-0.5">
+                                                                <CheckCircle2 className="w-3 h-3 text-indigo-600 shrink-0" />
+                                                                <span>{subtitle}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
 

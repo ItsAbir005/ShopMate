@@ -42,14 +42,15 @@ const logger_1 = require("../../utils/logger");
  * Powered by PayPal Agent Toolkit.
  */
 const merchantHandler = async (req, res) => {
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     try {
         const { message, history, actionConfirmed } = req.body;
         if (!actionConfirmed && (typeof message !== 'string' || !message.trim())) {
-            return res.status(400).json({ message: 'User message cannot be empty' });
+            return res.status(400).json({ requestId, message: 'User message cannot be empty' });
         }
         const adminId = req.user._id.toString();
-        const response = await AIService.merchantChat(adminId, message || '', history, actionConfirmed);
-        return res.json(response);
+        const response = await AIService.merchantChat(adminId, message || '', history, actionConfirmed, requestId);
+        return res.json({ ...response, requestId: response.requestId || requestId });
     }
     catch (err) {
         const errorCode = AIService.extractErrorCode(err);
@@ -60,12 +61,14 @@ const merchantHandler = async (req, res) => {
             (typeof err?.message === 'string' && (err.message.includes('400') || err.message.includes('INVALID_ARGUMENT')));
         if (isBadRequest) {
             return res.status(400).json({
+                requestId,
                 message: err.message || 'Invalid request',
                 error: err.message || 'Invalid request',
             });
         }
-        logger_1.logger.error({ err: err.message }, '[ai] Merchant copilot controller error');
+        logger_1.logger.error({ requestId, err: err.message }, '[ai] Merchant copilot controller error');
         return res.status(500).json({
+            requestId,
             text: 'An error occurred while contacting the AI Copilot. Please try again.',
             toolCalls: [],
         });
@@ -77,18 +80,20 @@ exports.merchantHandler = merchantHandler;
  * Confirms and executes a proposed write action (e.g. creating/sending invoice).
  */
 const merchantActionHandler = async (req, res) => {
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     try {
         const { toolName, parameters } = req.body;
         if (!toolName) {
-            return res.status(400).json({ message: 'toolName is required' });
+            return res.status(400).json({ requestId, message: 'toolName is required' });
         }
-        logger_1.logger.info({ toolName }, '[ai] Admin confirmed action execution');
-        const result = await AIService.executeMerchantAction(toolName, parameters || {});
-        return res.json(result);
+        logger_1.logger.info({ requestId, toolName }, '[ai] Admin confirmed action execution');
+        const result = await AIService.executeMerchantAction(toolName, parameters || {}, requestId);
+        return res.json({ ...result, requestId: result.requestId || requestId });
     }
     catch (err) {
-        logger_1.logger.error({ err: err.message }, '[ai] Action confirmation execution error');
+        logger_1.logger.error({ requestId, err: err.message }, '[ai] Action confirmation execution error');
         return res.status(500).json({
+            requestId,
             success: false,
             message: err.message || 'Action execution failed',
         });

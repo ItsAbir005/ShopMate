@@ -386,6 +386,52 @@ export async function customerAssistantChat(
         };
     }
 
+    async function execGetMyOrders(limit = 5) {
+        if (!userId) {
+            return {
+                success: false,
+                loginRequired: true,
+                message: 'Please sign in to view your orders.',
+            };
+        }
+
+        const safeLimit = Math.min(Math.max(1, Number(limit) || 5), 5);
+        const orders = await Order.find({ user_id: userId })
+            .sort({ createdAt: -1 })
+            .limit(safeLimit)
+            .lean();
+
+        if (orders.length === 0) {
+            return {
+                success: true,
+                message: "You haven't placed any orders yet.",
+                orders: [],
+            };
+        }
+
+        const orderIds = orders.map(o => o._id);
+        const shipments = await Shipment.find({ order_id: { $in: orderIds } }).lean();
+        const shipmentMap = new Map(shipments.map(s => [s.order_id.toString(), s]));
+
+        const formattedOrders = orders.map(o => {
+            const shipment = shipmentMap.get(o._id.toString());
+            return {
+                id: o._id.toString(),
+                status: o.status,
+                total: o.total_amount,
+                createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : undefined,
+                trackingStatus: shipment?.status || (o.status === 'delivered' ? 'delivered' : (o.status === 'shipped' ? 'in_transit' : 'processing')),
+                trackingCode: shipment?.trackingCode,
+                estimatedDelivery: shipment?.estimatedDelivery,
+            };
+        });
+
+        return {
+            success: true,
+            orders: formattedOrders,
+        };
+    }
+
     async function execGetMyOrderStatus(orderId?: string) {
         if (!userId) {
             return {
@@ -415,17 +461,11 @@ export async function customerAssistantChat(
             };
         }
 
-        // Return recent orders for user
-        const orders = await Order.find({ user_id: userId }).sort({ createdAt: -1 }).limit(3).lean();
+        // Delegate to execGetMyOrders if no orderId provided
+        const recentRes = await execGetMyOrders(5);
         return {
-            success: true,
-            recentOrders: orders.map(o => ({
-                id: o._id.toString(),
-                status: o.status,
-                paymentStatus: o.payment_status,
-                total: o.total_amount,
-                itemsCount: o.order_items.length,
-            })),
+            success: recentRes.success,
+            recentOrders: recentRes.orders,
         };
     }
 
@@ -435,17 +475,24 @@ export async function customerAssistantChat(
         const lower = message.toLowerCase();
         const toolCalls: AssistantToolCall[] = [];
 
-        if (lower.includes('order') || lower.includes('track') || lower.includes('status')) {
-            const res = await execGetMyOrderStatus();
-            toolCalls.push({ toolName: 'getMyOrderStatus', summary: 'Looked up recent orders' });
+        if (lower.includes('invoice') || lower.includes('dispute') || lower.includes('transaction')) {
+            return {
+                text: "PayPal transaction logs, invoices, and disputes are merchant features available exclusively to store administrators via the Admin AI Copilot.",
+                toolCalls: [],
+            };
+        }
+
+        if (lower.includes('order') || lower.includes('track') || lower.includes('status') || lower.includes('latest') || lower.includes('recent')) {
+            const res = await execGetMyOrders(5);
+            toolCalls.push({ toolName: 'getMyOrders', summary: 'Looked up recent orders' });
             if (!userId) {
                 return { text: 'Please sign in to view your orders and live tracking.', toolCalls };
             }
-            if (!res.recentOrders || res.recentOrders.length === 0) {
+            if (!res.orders || res.orders.length === 0) {
                 return { text: "You don't have any recent orders yet. Ready to start shopping?", toolCalls };
             }
-            const orderList = res.recentOrders.map(o => `• Order #${o.id.slice(-8).toUpperCase()}: Status: ${o.status}, Total: $${o.total.toFixed(2)}`).join('\n');
-            return { text: `Here are your recent orders:\n${orderList}\n\nTrack full details on your Orders page.`, toolCalls, orderStatus: res };
+            const orderList = res.orders.map(o => `• Order #${o.id.slice(-8).toUpperCase()}: Status: ${o.status}, Total: $${o.total.toFixed(2)}${o.trackingStatus ? ` (${o.trackingStatus})` : ''}`).join('\n');
+            return { text: `Here are your recent orders:\n${orderList}\n\nTrack full details on your Orders page.`, toolCalls, orderStatus: { recentOrders: res.orders } };
         }
 
         const found = await execSearchProducts(message);
@@ -488,13 +535,27 @@ export async function customerAssistantChat(
             },
         },
         {
-            name: 'getMyOrderStatus',
-            description: 'Retrieve status and shipment tracking code for the customer orders. Returns own orders only.',
+            name: 'getMyOrders',
+            description: "Retrieve the authenticated user's most recent orders (id, status, total, createdAt, tracking status). Use this when the customer asks 'where is my latest order', 'my recent orders', 'what did I order', 'order history', or any order status inquiry without a specific Order ID.",
             parametersJsonSchema: {
                 type: 'object',
                 properties: {
-                    orderId: { type: 'string', description: 'Optional specific Order ID to inspect' },
+                    limit: {
+                        type: 'number',
+                        description: 'Number of recent orders to retrieve (maximum 5, defaults to 5)',
+                    },
                 },
+            },
+        },
+        {
+            name: 'getMyOrderStatus',
+            description: 'Retrieve detailed status, items, and tracking for a specific Order ID. Use only when the customer provides a specific Order ID.',
+            parametersJsonSchema: {
+                type: 'object',
+                properties: {
+                    orderId: { type: 'string', description: 'The specific Order ID to inspect' },
+                },
+                required: ['orderId'],
             },
         },
     ];
@@ -502,11 +563,15 @@ export async function customerAssistantChat(
     const systemInstruction = `You are the official ShopMate customer shopping agent.
 RULES:
 1. Answers must come from tool results ONLY. Never fabricate products, prices, or orders.
-2. If asked about items, call "searchProducts".
-3. If asked to add to cart, call "addToCart". If the result says login is required, tell the customer to sign in.
-4. If asked about order status, delivery, or tracking, call "getMyOrderStatus".
-5. PAYMENT NOTICE: Payment always happens in the normal PayPal checkout. You cannot collect payments in chat. Always direct customers to "/orders/checkout" or their order page to complete PayPal payment.
-6. Keep answers friendly, concise, and helpful.`;
+2. If asked to find, search, or browse items, call "searchProducts".
+3. If asked to add items to cart, call "addToCart". If login is required, tell the customer to sign in.
+4. ORDER LOOKUPS:
+   - When the customer asks "where is my latest order", "where is my order", "my recent orders", "check my orders", or asks about order status without providing an Order ID, ALWAYS call "getMyOrders(limit: 5)". Do NOT ask the customer for an Order ID first; call "getMyOrders" to check their account.
+   - Only call "getMyOrderStatus(orderId)" when the customer provides a specific Order ID.
+5. MERCHANT FEATURES:
+   - Questions about PayPal-level business transactions, store transaction reports, PayPal account balances, creating or sending PayPal invoices, or PayPal disputes are store management features. Politely inform the customer that PayPal transactions, invoices, and disputes are merchant features available exclusively to store administrators via the Admin AI Copilot.
+6. PAYMENT NOTICE: Payment always happens in the standard PayPal checkout. You cannot collect card details or payment credentials in chat. Direct customers to "/orders/checkout" or their order page to complete PayPal payment.
+7. Keep answers friendly, concise, and helpful.`;
 
     const toolCalls: AssistantToolCall[] = [];
     let productsResult: any[] | undefined;
@@ -552,6 +617,14 @@ RULES:
                     result = await execAddToCart(args.productId, args.qty);
                     if (result.success) cartUpdatedResult = true;
                     toolCalls.push({ toolName: name, summary: result.message, result });
+                } else if (name === 'getMyOrders') {
+                    result = await execGetMyOrders(args.limit);
+                    orderStatusResult = { recentOrders: result.orders };
+                    toolCalls.push({
+                        toolName: name,
+                        summary: result.success ? `Retrieved ${result.orders?.length || 0} recent orders` : result.message,
+                        result,
+                    });
                 } else if (name === 'getMyOrderStatus') {
                     result = await execGetMyOrderStatus(args.orderId);
                     orderStatusResult = result;
@@ -638,28 +711,240 @@ export interface ProposedAction {
     summary: string;
 }
 
+export interface ToolCallResultInfo {
+    toolName: string;
+    summary: string;
+    resultCount?: number;
+    subtitle?: string;
+}
+
 export interface MerchantChatResponse {
     text: string;
-    toolCalls: { toolName: string; summary: string }[];
+    toolCalls: ToolCallResultInfo[];
     proposedAction?: ProposedAction;
+    requestId?: string;
+}
+
+export function extractPayPalErrorReason(toolName: string, err: any, args?: any): string {
+    const rawMsg = typeof err === 'string' ? err : (err?.message || JSON.stringify(err || ''));
+    const lower = rawMsg.toLowerCase();
+
+    if (
+        lower.includes('not_authorized') ||
+        lower.includes('permission_denied') ||
+        lower.includes('not enabled') ||
+        lower.includes('no permission') ||
+        lower.includes('unauthorized') ||
+        lower.includes('authorization_error')
+    ) {
+        if (toolName === 'list_transactions') {
+            return 'PayPal denied this request: Transaction Search is not enabled for this app in PayPal Developer Dashboard';
+        }
+        return `PayPal denied this request: ${toolName} permission is not enabled for this app`;
+    }
+
+    if (lower.includes('401') || lower.includes('invalid_client') || lower.includes('client authentication failed')) {
+        return 'PayPal authentication failed: Invalid Client ID or Client Secret';
+    }
+
+    if (lower.includes('31') || lower.includes('date range') || lower.includes('date_range')) {
+        return 'PayPal requires transaction search date ranges to be within 31 days';
+    }
+
+    if (lower.includes('404') || lower.includes('not found') || lower.includes('resource_not_found')) {
+        return `Requested PayPal resource was not found for ${toolName}`;
+    }
+
+    if (lower.includes('429') || lower.includes('rate limit')) {
+        return 'PayPal rate limit reached. Please wait a moment and try again.';
+    }
+
+    if (lower.includes('timeout') || lower.includes('timed out')) {
+        return 'PayPal API timed out while processing this request.';
+    }
+
+    return `PayPal returned an error: ${redactErrorMessage(rawMsg)}`;
+}
+
+export function getRedactedArgs(args: any): Record<string, any> {
+    if (!args || typeof args !== 'object') return {};
+    const safe: Record<string, any> = {};
+    const SAFE_KEYS = new Set([
+        'start_date', 'end_date', 'startDate', 'endDate',
+        'date_from', 'date_to', 'from_date', 'to_date',
+        'page', 'page_size', 'pageSize', 'limit', 'total_count_required',
+        'transaction_status', 'status', 'dispute_state'
+    ]);
+    for (const [key, value] of Object.entries(args)) {
+        if (SAFE_KEYS.has(key)) {
+            safe[key] = value;
+        } else if (/token|secret|key|pass|auth|email|payer|card/i.test(key)) {
+            safe[key] = '[REDACTED]';
+        }
+    }
+    return safe;
+}
+
+export function clampTransactionDates(args: any, now: Date): { args: any; clamped: boolean } {
+    const safeArgs = { ...(args || {}) };
+    const MAX_DAYS_MS = 31 * 24 * 60 * 60 * 1000;
+    const DEFAULT_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+    let endDate: Date;
+    if (safeArgs.end_date) {
+        endDate = new Date(safeArgs.end_date);
+        if (isNaN(endDate.getTime())) endDate = now;
+    } else {
+        endDate = now;
+    }
+
+    let startDate: Date;
+    if (safeArgs.start_date) {
+        startDate = new Date(safeArgs.start_date);
+        if (isNaN(startDate.getTime())) {
+            startDate = new Date(endDate.getTime() - DEFAULT_DAYS_MS);
+        }
+    } else {
+        startDate = new Date(endDate.getTime() - DEFAULT_DAYS_MS);
+    }
+
+    let clamped = false;
+    if (endDate.getTime() - startDate.getTime() > MAX_DAYS_MS) {
+        startDate = new Date(endDate.getTime() - MAX_DAYS_MS);
+        clamped = true;
+    }
+
+    if (startDate.getTime() > endDate.getTime()) {
+        startDate = new Date(endDate.getTime() - DEFAULT_DAYS_MS);
+        clamped = true;
+    }
+
+    safeArgs.start_date = startDate.toISOString();
+    safeArgs.end_date = endDate.toISOString();
+
+    return { args: safeArgs, clamped };
+}
+
+export function formatToolResultDetails(toolName: string, data: any, args?: any): {
+    summary: string;
+    subtitle: string;
+    resultCount: number;
+    errorReason?: string;
+    httpStatus: number;
+} {
+    if (!data) {
+        return {
+            summary: `Called ${toolName}`,
+            subtitle: `PayPal returned no data`,
+            resultCount: 0,
+            httpStatus: 200,
+        };
+    }
+
+    if (data.error || data.name === 'NOT_AUTHORIZED' || data.name === 'PERMISSION_DENIED') {
+        const errReason = extractPayPalErrorReason(toolName, data.error || data, args);
+        return {
+            summary: errReason,
+            subtitle: `PayPal error: ${errReason}`,
+            resultCount: 0,
+            errorReason: errReason,
+            httpStatus: data.status || 403,
+        };
+    }
+
+    if (toolName === 'list_transactions') {
+        const count = Array.isArray(data.transaction_details) ? data.transaction_details.length : 0;
+        const startStr = args?.start_date ? args.start_date.split('T')[0] : '';
+        const endStr = args?.end_date ? args.end_date.split('T')[0] : '';
+        const dateRangeStr = startStr && endStr ? ` between ${startStr} and ${endStr}` : '';
+
+        if (count === 0) {
+            return {
+                summary: `No transactions found${dateRangeStr}`,
+                subtitle: `PayPal returned 0 transactions`,
+                resultCount: 0,
+                httpStatus: 200,
+            };
+        }
+        return {
+            summary: `Retrieved ${count} transactions from PayPal${dateRangeStr}`,
+            subtitle: `PayPal returned ${count} transaction${count === 1 ? '' : 's'}`,
+            resultCount: count,
+            httpStatus: 200,
+        };
+    }
+
+    if (toolName === 'list_invoices' || toolName === 'search_invoicing') {
+        const count = Array.isArray(data.items) ? data.items.length : (data.total_items || 0);
+        return {
+            summary: `Found ${count} invoices in PayPal account`,
+            subtitle: `PayPal returned ${count} invoice${count === 1 ? '' : 's'}`,
+            resultCount: count,
+            httpStatus: 200,
+        };
+    }
+
+    if (toolName === 'list_disputes') {
+        const count = Array.isArray(data.items) ? data.items.length : 0;
+        return {
+            summary: `Retrieved ${count} dispute records`,
+            subtitle: `PayPal returned ${count} dispute${count === 1 ? '' : 's'}`,
+            resultCount: count,
+            httpStatus: 200,
+        };
+    }
+
+    if (toolName === 'get_merchant_insights') {
+        return {
+            summary: 'Retrieved PayPal business analytics and metrics',
+            subtitle: 'PayPal returned business analytics',
+            resultCount: 1,
+            httpStatus: 200,
+        };
+    }
+
+    return {
+        summary: `Successfully executed ${toolName}`,
+        subtitle: `PayPal executed ${toolName}`,
+        resultCount: 1,
+        httpStatus: 200,
+    };
+}
+
+function buildFallbackToolSummary(
+    toolCalls: ToolCallResultInfo[],
+    functionResponses: any[]
+): string {
+    const lines: string[] = [];
+    for (const tc of toolCalls) {
+        lines.push(`### ${tc.toolName}`);
+        lines.push(`- **Status:** ${tc.summary}`);
+        if (tc.subtitle) {
+            lines.push(`- **Result:** ${tc.subtitle}`);
+        }
+    }
+    return lines.join('\n\n');
 }
 
 export async function merchantChat(
     adminId: string,
     message: string,
     history: any[] = [],
-    actionConfirmed?: { toolName: string; parameters: any }
+    actionConfirmed?: { toolName: string; parameters: any },
+    customRequestId?: string
 ): Promise<MerchantChatResponse> {
+    const requestId = customRequestId || `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     const toolkit = getPayPalToolkit();
     const clientInfo = getGeminiClient();
 
     // If a write action was confirmed by the admin, execute it directly
     if (actionConfirmed) {
-        logger.info({ toolName: actionConfirmed.toolName }, '[ai] Executing confirmed admin action');
-        const execResult = await executeMerchantAction(actionConfirmed.toolName, actionConfirmed.parameters);
+        logger.info({ requestId, toolName: actionConfirmed.toolName }, '[ai] Executing confirmed admin action');
+        const execResult = await executeMerchantAction(actionConfirmed.toolName, actionConfirmed.parameters, requestId);
         return {
             text: `Action **${actionConfirmed.toolName}** executed successfully.\n\nResult:\n\`\`\`json\n${JSON.stringify(execResult.result, null, 2)}\n\`\`\``,
-            toolCalls: [{ toolName: actionConfirmed.toolName, summary: execResult.summary }],
+            toolCalls: [{ toolName: actionConfirmed.toolName, summary: execResult.summary, subtitle: execResult.summary }],
+            requestId,
         };
     }
 
@@ -667,8 +952,17 @@ export async function merchantChat(
         return {
             text: "AI service is currently offline or GEMINI_API_KEY is missing. You can view your PayPal Dashboard directly or configure your API key.",
             toolCalls: [],
+            requestId,
         };
     }
+
+    // Dynamic UTC Date Calculations
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const startOfTodayIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)).toISOString();
+    const endOfTodayIso = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)).toISOString();
+    const sevenDaysAgoIso = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const thirtyDaysAgoIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // Convert PayPalAgentToolkit tools into Gemini function declarations
     const rawTools = toolkit.getTools();
@@ -680,6 +974,28 @@ export async function merchantChat(
 
     const systemInstruction = `You are ShopMate AI Copilot, a dedicated merchant business assistant.
 You have direct integration with PayPal official APIs via PayPal Agent Toolkit.
+
+CURRENT DATE & TIME (UTC):
+- Current timestamp: ${nowIso}
+- Today's date: ${nowIso.split('T')[0]}
+- Start of today: ${startOfTodayIso}
+- End of today: ${endOfTodayIso}
+- 7 days ago: ${sevenDaysAgoIso}
+- 30 days ago: ${thirtyDaysAgoIso}
+
+STRICT DATE HANDLING RULES:
+1. NEVER ask the merchant for date ranges or start/end dates.
+2. Automatically resolve relative phrases into concrete ISO 8601 timestamps with timezone (e.g., 'YYYY-MM-DDTHH:mm:ssZ'):
+   - "recent", "latest", or unspecified: default to the last 7 days (${sevenDaysAgoIso} to ${nowIso}).
+   - "today": from ${startOfTodayIso} to ${endOfTodayIso} (or ${nowIso}).
+   - "this week": from 7 days ago to ${nowIso}.
+   - "last 30 days": from ${thirtyDaysAgoIso} to ${nowIso}.
+   - A single date: treat it as that entire 24-hour day (00:00:00Z to 23:59:59Z on that date).
+3. PAYPAL 31-DAY TRANSACTION SEARCH LIMIT:
+   - PayPal transaction search (list_transactions) strictly allows a maximum interval of 31 days between start_date and end_date.
+   - NEVER send a date range greater than 31 days to list_transactions. If the user asks for a wider range (e.g. "last 60 days"), clamp to the most recent 31-day interval and note this PayPal restriction in your answer.
+   - All dates passed to PayPal tools MUST be full ISO 8601 strings with timezone (e.g. '${nowIso}').
+
 CAPABILITIES:
 - Transaction listing & history: list_transactions
 - Reporting & Insights: get_merchant_insights
@@ -691,9 +1007,10 @@ IMPORTANT RULES:
 1. Always utilize the PayPal tools when asked for transactions, invoices, disputes, or metrics.
 2. Read-only tools execute automatically.
 3. If the merchant asks to create or send an invoice or make any changes, call the corresponding tool. The system will safely present a proposed action for admin confirmation before writing to PayPal.
-4. Format numbers, currencies, and dates cleanly. Always cite the PayPal data retrieved.`;
+4. Format numbers, currencies, and dates cleanly. Always cite the PayPal data retrieved.
+5. If transactions or items are returned, summarize them with key metrics (total count, gross volume, fees, net amounts, and statuses).`;
 
-    const toolCalls: { toolName: string; summary: string }[] = [];
+    const toolCalls: ToolCallResultInfo[] = [];
     let proposedAction: ProposedAction | undefined;
     let stage: AiStage = 'building contents';
 
@@ -715,9 +1032,30 @@ IMPORTANT RULES:
 
             const funcCalls = response1.functionCalls;
             if (!funcCalls || funcCalls.length === 0) {
+                let directText = response1.text?.trim() || '';
+
+                // If directText is empty, do NOT fall back to generic phrase for queries!
+                if (!directText) {
+                    const isGreeting = /^(hi|hello|hey|greetings|good\s*(morning|afternoon|evening))/i.test(message.trim()) && history.length <= 1;
+                    if (isGreeting) {
+                        directText = 'How can I assist you with your PayPal store operations?';
+                    } else {
+                        logger.info({ requestId }, '[ai] No function call and empty text, prompting direct answer');
+                        const directAnswer = await clientInfo.ai.models.generateContent({
+                            model: clientInfo.model,
+                            contents: [
+                                { role: 'user', parts: [{ text: `${systemInstruction}\n\nMerchant question: ${message}\n\nPlease answer the merchant clearly and directly.` }] }
+                            ],
+                            config: { temperature: 0.2 },
+                        });
+                        directText = directAnswer.text?.trim() || `I received your request regarding "${message}". However, no data was returned from PayPal. You can ask for "recent transactions", "merchant insights", or "open disputes".`;
+                    }
+                }
+
                 return {
-                    text: response1.text || 'How can I assist you with your PayPal store operations?',
+                    text: directText,
                     toolCalls: [],
+                    requestId,
                 };
             }
 
@@ -727,7 +1065,7 @@ IMPORTANT RULES:
             for (const fc of funcCalls) {
                 const name = fc.name || '';
                 if (!name) continue;
-                const args = fc.args || {};
+                let args = fc.args || {};
 
                 // Intercept write actions: do NOT run automatically, propose to admin
                 if (isWriteAction(name)) {
@@ -740,14 +1078,24 @@ IMPORTANT RULES:
                     toolCalls.push({
                         toolName: name,
                         summary: `Action Proposed: ${name} (Awaiting Admin Confirmation)`,
+                        subtitle: `Awaiting admin confirmation`,
                     });
                     // Skip execution, return proposed action
                     return {
                         text: `I have prepared the action **${name}**. Please review the parameters below and click **Confirm Action** to execute it in PayPal.`,
                         toolCalls,
                         proposedAction,
+                        requestId,
                     };
                 }
+
+                // If list_transactions, enforce 31-day clamping and default date range in code
+                if (name === 'list_transactions') {
+                    const clampedResult = clampTransactionDates(args, now);
+                    args = clampedResult.args;
+                }
+
+                const redactedArgs = getRedactedArgs(args);
 
                 // Read-only tool execution
                 try {
@@ -767,23 +1115,52 @@ IMPORTANT RULES:
                         // Keep as string
                     }
 
-                    const summary = formatToolResultSummary(name, parsedContent);
-                    toolCalls.push({ toolName: name, summary });
+                    const details = formatToolResultDetails(name, parsedContent, args);
+                    toolCalls.push({
+                        toolName: name,
+                        summary: details.summary,
+                        resultCount: details.resultCount,
+                        subtitle: details.subtitle,
+                    });
+
+                    logger.info({
+                        requestId,
+                        toolName: name,
+                        redactedArgs,
+                        paypalHttpStatus: details.httpStatus,
+                        resultCount: details.resultCount,
+                    }, '[paypal] Tool execution succeeded');
 
                     functionResponses.push({
                         name,
                         response: { output: parsedContent },
                     });
                 } catch (toolErr: any) {
+                    const plainReason = extractPayPalErrorReason(name, toolErr, args);
+                    const statusMatch = (toolErr.message || '').match(/\b(4\d\d|5\d\d)\b/);
+                    const httpStatus = toolErr.status || toolErr.statusCode || (statusMatch ? parseInt(statusMatch[1], 10) : 500);
+
                     logger.warn({
+                        requestId,
                         stage: 'tool execution',
                         toolName: name,
+                        redactedArgs,
+                        paypalHttpStatus: httpStatus,
+                        errorName: toolErr.name || 'PayPalToolError',
                         errorMessage: redactErrorMessage(toolErr.message),
-                    }, '[ai] PayPal tool execution soft error');
-                    toolCalls.push({ toolName: name, summary: `Error: ${toolErr.message}` });
+                        resultCount: 0,
+                    }, '[paypal] Tool execution failed');
+
+                    toolCalls.push({
+                        toolName: name,
+                        summary: plainReason,
+                        resultCount: 0,
+                        subtitle: plainReason,
+                    });
+
                     functionResponses.push({
                         name,
-                        response: { error: toolErr.message },
+                        response: { error: plainReason },
                     });
                 }
             }
@@ -809,14 +1186,40 @@ IMPORTANT RULES:
                 },
             });
 
+            let responseText = response2.text?.trim() || '';
+
+            // If the model returns no text after a tool call, run a second turn to summarize the tool result
+            if (!responseText) {
+                logger.info({ requestId }, '[ai] Second turn returned empty text, requesting tool summary');
+                contents.push({
+                    role: 'user',
+                    parts: [{ text: 'Please summarize the PayPal tool results above clearly for the merchant in markdown, including counts, amounts, statuses, and any key details.' }],
+                });
+                const responseSummary = await clientInfo.ai.models.generateContent({
+                    model: clientInfo.model,
+                    contents: contents as any,
+                    config: {
+                        systemInstruction,
+                        temperature: 0.2,
+                    },
+                });
+                responseText = responseSummary.text?.trim() || '';
+            }
+
+            // If still empty, build fallback summary directly from tool results
+            if (!responseText) {
+                responseText = buildFallbackToolSummary(toolCalls, functionResponses);
+            }
+
             return {
-                text: response2.text || 'Here is the requested information.',
+                text: responseText,
                 toolCalls,
+                requestId,
             };
         };
 
         const result = await withTimeout(runTurn(), 8000);
-        logger.info({ toolCallsCount: result.toolCalls.length, hasProposedAction: Boolean(result.proposedAction) }, '[ai] Merchant chat processed');
+        logger.info({ requestId, toolCallsCount: result.toolCalls.length, hasProposedAction: Boolean(result.proposedAction) }, '[ai] Merchant chat processed');
         return result;
     } catch (err: any) {
         const errorCode = extractErrorCode(err);
@@ -830,6 +1233,7 @@ IMPORTANT RULES:
 
         if (isBadRequest) {
             logger.error({
+                requestId,
                 stage,
                 errorCode: 400,
                 errorMessage: redactedMsg,
@@ -838,6 +1242,7 @@ IMPORTANT RULES:
         }
 
         logger.warn({
+            requestId,
             stage,
             errorCode,
             errorMessage: redactedMsg,
@@ -846,11 +1251,17 @@ IMPORTANT RULES:
         return {
             text: "I'm having a slight connection delay right now. You can retry with a specific inquiry such as 'List invoices' or check your PayPal dashboard directly.",
             toolCalls: [],
+            requestId,
         };
     }
 }
 
-export async function executeMerchantAction(toolName: string, parameters: any): Promise<{ success: boolean; result: any; summary: string }> {
+export async function executeMerchantAction(
+    toolName: string,
+    parameters: any,
+    customRequestId?: string
+): Promise<{ success: boolean; result: any; summary: string; requestId?: string }> {
+    const requestId = customRequestId || `act_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     const toolkit = getPayPalToolkit();
     try {
         const resp = await toolkit.handleToolCall({
@@ -870,31 +1281,10 @@ export async function executeMerchantAction(toolName: string, parameters: any): 
         }
 
         const summary = `Executed ${toolName} successfully`;
-        return { success: true, result: parsed, summary };
+        logger.info({ requestId, toolName }, '[paypal] Confirmed action executed successfully');
+        return { success: true, result: parsed, summary, requestId };
     } catch (err: any) {
-        logger.warn({ err: err.message, toolName }, '[ai] Action execution failed');
-        return { success: false, result: { error: err.message }, summary: `Execution failed: ${err.message}` };
+        logger.warn({ requestId, err: err.message, toolName }, '[paypal] Action execution failed');
+        return { success: false, result: { error: err.message }, summary: `Execution failed: ${err.message}`, requestId };
     }
-}
-
-function formatToolResultSummary(toolName: string, data: any): string {
-    if (!data) return `Called ${toolName}`;
-    if (data.error) return `${toolName}: ${data.error.message || 'Error occurred'}`;
-
-    if (toolName === 'list_transactions') {
-        const count = data.transaction_details?.length || 0;
-        return `Retrieved ${count} transactions from PayPal`;
-    }
-    if (toolName === 'list_invoices') {
-        const count = data.items?.length || data.total_items || 0;
-        return `Found ${count} invoices in PayPal account`;
-    }
-    if (toolName === 'list_disputes') {
-        const count = data.items?.length || 0;
-        return `Retrieved ${count} dispute records`;
-    }
-    if (toolName === 'get_merchant_insights') {
-        return 'Retrieved PayPal business analytics and metrics';
-    }
-    return `Successfully executed ${toolName}`;
 }

@@ -9,15 +9,16 @@ import { logger } from '../../utils/logger';
  * Powered by PayPal Agent Toolkit.
  */
 export const merchantHandler = async (req: AuthRequest, res: Response): Promise<any> => {
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     try {
         const { message, history, actionConfirmed } = req.body;
         if (!actionConfirmed && (typeof message !== 'string' || !message.trim())) {
-            return res.status(400).json({ message: 'User message cannot be empty' });
+            return res.status(400).json({ requestId, message: 'User message cannot be empty' });
         }
 
         const adminId = (req.user as any)._id.toString();
-        const response = await AIService.merchantChat(adminId, message || '', history, actionConfirmed);
-        return res.json(response);
+        const response = await AIService.merchantChat(adminId, message || '', history, actionConfirmed, requestId);
+        return res.json({ ...response, requestId: response.requestId || requestId });
     } catch (err: any) {
         const errorCode = AIService.extractErrorCode(err);
         const isBadRequest = errorCode === 400 ||
@@ -28,13 +29,15 @@ export const merchantHandler = async (req: AuthRequest, res: Response): Promise<
 
         if (isBadRequest) {
             return res.status(400).json({
+                requestId,
                 message: err.message || 'Invalid request',
                 error: err.message || 'Invalid request',
             });
         }
 
-        logger.error({ err: err.message }, '[ai] Merchant copilot controller error');
+        logger.error({ requestId, err: err.message }, '[ai] Merchant copilot controller error');
         return res.status(500).json({
+            requestId,
             text: 'An error occurred while contacting the AI Copilot. Please try again.',
             toolCalls: [],
         });
@@ -46,18 +49,20 @@ export const merchantHandler = async (req: AuthRequest, res: Response): Promise<
  * Confirms and executes a proposed write action (e.g. creating/sending invoice).
  */
 export const merchantActionHandler = async (req: AuthRequest, res: Response): Promise<any> => {
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     try {
         const { toolName, parameters } = req.body;
         if (!toolName) {
-            return res.status(400).json({ message: 'toolName is required' });
+            return res.status(400).json({ requestId, message: 'toolName is required' });
         }
 
-        logger.info({ toolName }, '[ai] Admin confirmed action execution');
-        const result = await AIService.executeMerchantAction(toolName, parameters || {});
-        return res.json(result);
+        logger.info({ requestId, toolName }, '[ai] Admin confirmed action execution');
+        const result = await AIService.executeMerchantAction(toolName, parameters || {}, requestId);
+        return res.json({ ...result, requestId: result.requestId || requestId });
     } catch (err: any) {
-        logger.error({ err: err.message }, '[ai] Action confirmation execution error');
+        logger.error({ requestId, err: err.message }, '[ai] Action confirmation execution error');
         return res.status(500).json({
+            requestId,
             success: false,
             message: err.message || 'Action execution failed',
         });

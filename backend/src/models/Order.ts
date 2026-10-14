@@ -52,6 +52,8 @@ export interface IOrder extends Document {
     cancelled_at?: Date;
     confirmationEmailSent?: boolean;
     aiRisk?: IOrderAiRisk;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 const OrderItemSchema = new Schema({

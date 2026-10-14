@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import Link from "next/link";
@@ -50,9 +51,12 @@ interface AssistantOrderStatus {
   recentOrders?: {
     id: string;
     status: string;
-    paymentStatus: string;
+    paymentStatus?: string;
     total: number;
-    itemsCount: number;
+    itemsCount?: number;
+    createdAt?: string;
+    trackingStatus?: string;
+    trackingCode?: string;
   }[];
 }
 
@@ -133,6 +137,7 @@ function RenderText({ text }: { text: string }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function SupportAgent() {
+  const pathname = usePathname();
   const { user } = useAuth();
   const { refreshCart } = useCart();
 
@@ -270,6 +275,10 @@ export default function SupportAgent() {
     }
     handleSend(`Add 1 of ${product.title} to my cart (Product ID: ${product.id})`);
   };
+
+  if (pathname?.startsWith("/admin") || pathname?.startsWith("/driver")) {
+    return null;
+  }
 
   const quickReplies = user ? QUICK_REPLIES_LOGGED : QUICK_REPLIES_GUEST;
   const showQuickReplies = messages.length <= 1 && !typing;
@@ -470,7 +479,7 @@ export default function SupportAgent() {
                                 #{o.id.slice(-8).toUpperCase()}
                               </p>
                               <p className="text-[10px] text-gray-500 mt-0.5">
-                                {o.status} · ${o.total.toFixed(2)} · {o.itemsCount} item{o.itemsCount !== 1 ? "s" : ""}
+                                {o.status} · ${o.total.toFixed(2)}{o.trackingStatus ? ` · ${o.trackingStatus}` : (o.itemsCount ? ` · ${o.itemsCount} items` : "")}
                               </p>
                             </div>
                             <Link
