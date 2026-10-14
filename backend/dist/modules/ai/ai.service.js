@@ -33,7 +33,11 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.AiValidationError = void 0;
 exports.withTimeout = withTimeout;
+exports.redactErrorMessage = redactErrorMessage;
+exports.extractErrorCode = extractErrorCode;
+exports.buildGeminiContents = buildGeminiContents;
 exports.evaluateOrderRisk = evaluateOrderRisk;
 exports.syncDeliveryTrackingToPayPal = syncDeliveryTrackingToPayPal;
 exports.customerAssistantChat = customerAssistantChat;
@@ -74,6 +78,113 @@ function getGeminiClient() {
         return null;
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     return { ai: new genai_1.GoogleGenAI({ apiKey }), model };
+}
+// ─── Gemini Contents & Error Helpers ─────────────────────────────────────────
+class AiValidationError extends Error {
+    constructor(message) {
+        super(message);
+        this.statusCode = 400;
+        this.name = 'AiValidationError';
+    }
+}
+exports.AiValidationError = AiValidationError;
+function redactErrorMessage(msg) {
+    if (!msg || typeof msg !== 'string')
+        return 'Unknown error';
+    return msg
+        .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]')
+        .replace(/(access_token|client_secret|authorization|bearer)\s*[:=]\s*[^\s,;]+/gi, '$1:[REDACTED]')
+        .slice(0, 200);
+}
+function extractErrorCode(err) {
+    if (err?.statusCode)
+        return err.statusCode;
+    if (err?.status)
+        return err.status;
+    if (err?.code)
+        return err.code;
+    if (err?.error?.code)
+        return err.error.code;
+    if (err?.error?.status)
+        return err.error.status;
+    if (err?.name === 'TimeoutError' || (typeof err?.message === 'string' && err.message.toLowerCase().includes('timed out'))) {
+        return 'TIMEOUT';
+    }
+    const match = typeof err?.message === 'string' ? err.message.match(/\b(4\d\d|5\d\d)\b/) : null;
+    if (match)
+        return parseInt(match[1], 10);
+    return 'UNKNOWN';
+}
+/**
+ * Builds Gemini contents array from user message and conversational history:
+ * - accepts {role, text} (and {role, content}) items, converting role names to "user" and "model"
+ * - drops items with missing, non-string or whitespace-only text
+ * - drops any leading "model" messages so the first item is always a "user" message
+ * - merges consecutive same-role items so turns alternate cleanly
+ * - makes sure the final item is the new user message, rejecting with HTTP 400 if empty
+ * - limits history to the last ~10 messages
+ */
+function buildGeminiContents(newMessage, rawHistory = []) {
+    if (typeof newMessage !== 'string' || !newMessage.trim()) {
+        throw new AiValidationError('User message cannot be empty');
+    }
+    const cleanNewMessage = newMessage.trim();
+    const cleaned = [];
+    if (Array.isArray(rawHistory)) {
+        for (const item of rawHistory) {
+            if (!item || typeof item !== 'object')
+                continue;
+            const rawText = typeof item.text === 'string'
+                ? item.text
+                : (typeof item.content === 'string' ? item.content : '');
+            const trimmed = rawText.trim();
+            if (!trimmed)
+                continue;
+            const rawRole = (typeof item.role === 'string' ? item.role.toLowerCase() : '').trim();
+            let role;
+            if (rawRole === 'user') {
+                role = 'user';
+            }
+            else if (rawRole === 'assistant' || rawRole === 'bot' || rawRole === 'model') {
+                role = 'model';
+            }
+            else {
+                role = 'user';
+            }
+            cleaned.push({
+                role,
+                parts: [{ text: trimmed }],
+            });
+        }
+    }
+    const limited = cleaned.slice(-10);
+    const alternating = [];
+    for (const item of limited) {
+        if (alternating.length > 0 && alternating[alternating.length - 1].role === item.role) {
+            alternating[alternating.length - 1].parts[0].text += `\n${item.parts[0].text}`;
+        }
+        else {
+            alternating.push({ role: item.role, parts: [{ text: item.parts[0].text }] });
+        }
+    }
+    while (alternating.length > 0 && alternating[0].role === 'model') {
+        alternating.shift();
+    }
+    if (alternating.length > 0 && alternating[alternating.length - 1].role === 'user') {
+        if (alternating[alternating.length - 1].parts[0].text === cleanNewMessage) {
+            // Already includes this message
+        }
+        else {
+            alternating[alternating.length - 1].parts[0].text += `\n${cleanNewMessage}`;
+        }
+    }
+    else {
+        alternating.push({
+            role: 'user',
+            parts: [{ text: cleanNewMessage }],
+        });
+    }
+    return alternating;
 }
 async function evaluateOrderRisk(order) {
     const userId = order.user_id;
@@ -383,24 +494,15 @@ RULES:
     let productsResult;
     let orderStatusResult;
     let cartUpdatedResult = false;
+    let stage = 'building contents';
     try {
+        stage = 'building contents';
+        const contents = buildGeminiContents(message, history);
         const runTurn = async () => {
-            const contents = [];
-            // Add previous history
-            for (const h of history.slice(-6)) {
-                contents.push({
-                    role: h.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: h.text }],
-                });
-            }
-            contents.push({
-                role: 'user',
-                parts: [{ text: message }],
-            });
-            // Initial model call
+            stage = 'model call';
             const response1 = await clientInfo.ai.models.generateContent({
                 model: clientInfo.model,
-                contents,
+                contents: contents,
                 config: {
                     systemInstruction,
                     tools: [{ functionDeclarations }],
@@ -412,6 +514,7 @@ RULES:
                 return response1.text || 'How can I assist you with your shopping today?';
             }
             // Execute function calls
+            stage = 'tool execution';
             const functionResponses = [];
             for (const fc of funcCalls) {
                 const name = fc.name || '';
@@ -422,7 +525,7 @@ RULES:
                 if (name === 'searchProducts') {
                     result = await execSearchProducts(args.query, args.maxPrice);
                     productsResult = result;
-                    toolCalls.push({ toolName: name, summary: `Found ${result.length} products matching "${args.query}"`, result });
+                    toolCalls.push({ toolName: name, summary: `Found ${result.length} products matching query`, result });
                 }
                 else if (name === 'addToCart') {
                     result = await execAddToCart(args.productId, args.qty);
@@ -441,6 +544,7 @@ RULES:
                 });
             }
             // Second turn with tool outputs
+            stage = 'tool result';
             const candidateParts = response1.candidates?.[0]?.content?.parts || [];
             contents.push({
                 role: 'model',
@@ -452,7 +556,7 @@ RULES:
             });
             const response2 = await clientInfo.ai.models.generateContent({
                 model: clientInfo.model,
-                contents,
+                contents: contents,
                 config: {
                     systemInstruction,
                     temperature: 0.2,
@@ -471,7 +575,26 @@ RULES:
         };
     }
     catch (err) {
-        logger_1.logger.warn({ err: err.message }, '[ai] Customer assistant error or timeout, falling back');
+        const errorCode = extractErrorCode(err);
+        const redactedMsg = redactErrorMessage(err?.message);
+        const isBadRequest = errorCode === 400 ||
+            err?.status === 400 ||
+            err?.statusCode === 400 ||
+            err instanceof AiValidationError ||
+            (typeof err?.message === 'string' && (err.message.includes('400') || err.message.includes('INVALID_ARGUMENT')));
+        if (isBadRequest) {
+            logger_1.logger.error({
+                stage,
+                errorCode: 400,
+                errorMessage: redactedMsg,
+            }, '[ai] Customer assistant 400 Bad Request error');
+            throw err;
+        }
+        logger_1.logger.warn({
+            stage,
+            errorCode,
+            errorMessage: redactedMsg,
+        }, '[ai] Customer assistant error or timeout, falling back');
         return {
             text: "I'm having a slight connection delay right now. You can browse our catalog, check your cart, or visit the Orders page directly!",
             toolCalls: [],
@@ -519,22 +642,15 @@ IMPORTANT RULES:
 4. Format numbers, currencies, and dates cleanly. Always cite the PayPal data retrieved.`;
     const toolCalls = [];
     let proposedAction;
+    let stage = 'building contents';
     try {
+        stage = 'building contents';
+        const contents = buildGeminiContents(message, history);
         const runTurn = async () => {
-            const contents = [];
-            for (const h of history.slice(-6)) {
-                contents.push({
-                    role: h.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: h.text }],
-                });
-            }
-            contents.push({
-                role: 'user',
-                parts: [{ text: message }],
-            });
+            stage = 'model call';
             const response1 = await clientInfo.ai.models.generateContent({
                 model: clientInfo.model,
-                contents,
+                contents: contents,
                 config: {
                     systemInstruction,
                     tools: [{ functionDeclarations }],
@@ -549,6 +665,7 @@ IMPORTANT RULES:
                 };
             }
             const functionResponses = [];
+            stage = 'tool execution';
             for (const fc of funcCalls) {
                 const name = fc.name || '';
                 if (!name)
@@ -598,7 +715,11 @@ IMPORTANT RULES:
                     });
                 }
                 catch (toolErr) {
-                    logger_1.logger.warn({ err: toolErr.message, toolName: name }, '[ai] PayPal tool execution soft error');
+                    logger_1.logger.warn({
+                        stage: 'tool execution',
+                        toolName: name,
+                        errorMessage: redactErrorMessage(toolErr.message),
+                    }, '[ai] PayPal tool execution soft error');
                     toolCalls.push({ toolName: name, summary: `Error: ${toolErr.message}` });
                     functionResponses.push({
                         name,
@@ -607,6 +728,7 @@ IMPORTANT RULES:
                 }
             }
             // Second turn with tool results
+            stage = 'tool result';
             const candidateParts = response1.candidates?.[0]?.content?.parts || [];
             contents.push({
                 role: 'model',
@@ -618,7 +740,7 @@ IMPORTANT RULES:
             });
             const response2 = await clientInfo.ai.models.generateContent({
                 model: clientInfo.model,
-                contents,
+                contents: contents,
                 config: {
                     systemInstruction,
                     temperature: 0.1,
@@ -634,9 +756,28 @@ IMPORTANT RULES:
         return result;
     }
     catch (err) {
-        logger_1.logger.warn({ err: err.message }, '[ai] Merchant chat error or timeout');
+        const errorCode = extractErrorCode(err);
+        const redactedMsg = redactErrorMessage(err?.message);
+        const isBadRequest = errorCode === 400 ||
+            err?.status === 400 ||
+            err?.statusCode === 400 ||
+            err instanceof AiValidationError ||
+            (typeof err?.message === 'string' && (err.message.includes('400') || err.message.includes('INVALID_ARGUMENT')));
+        if (isBadRequest) {
+            logger_1.logger.error({
+                stage,
+                errorCode: 400,
+                errorMessage: redactedMsg,
+            }, '[ai] Merchant copilot 400 Bad Request error');
+            throw err;
+        }
+        logger_1.logger.warn({
+            stage,
+            errorCode,
+            errorMessage: redactedMsg,
+        }, '[ai] Merchant chat error or timeout, falling back');
         return {
-            text: "Request timed out or encountered an issue. You can retry with a specific inquiry such as 'List invoices' or 'Check disputes'.",
+            text: "I'm having a slight connection delay right now. You can retry with a specific inquiry such as 'List invoices' or check your PayPal dashboard directly.",
             toolCalls: [],
         };
     }

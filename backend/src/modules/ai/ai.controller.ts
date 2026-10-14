@@ -11,14 +11,28 @@ import { logger } from '../../utils/logger';
 export const merchantHandler = async (req: AuthRequest, res: Response): Promise<any> => {
     try {
         const { message, history, actionConfirmed } = req.body;
-        if (!message && !actionConfirmed) {
-            return res.status(400).json({ message: 'Message or action confirmation is required' });
+        if (!actionConfirmed && (typeof message !== 'string' || !message.trim())) {
+            return res.status(400).json({ message: 'User message cannot be empty' });
         }
 
         const adminId = (req.user as any)._id.toString();
         const response = await AIService.merchantChat(adminId, message || '', history, actionConfirmed);
         return res.json(response);
     } catch (err: any) {
+        const errorCode = AIService.extractErrorCode(err);
+        const isBadRequest = errorCode === 400 ||
+            err?.status === 400 ||
+            err?.statusCode === 400 ||
+            err instanceof AIService.AiValidationError ||
+            (typeof err?.message === 'string' && (err.message.includes('400') || err.message.includes('INVALID_ARGUMENT')));
+
+        if (isBadRequest) {
+            return res.status(400).json({
+                message: err.message || 'Invalid request',
+                error: err.message || 'Invalid request',
+            });
+        }
+
         logger.error({ err: err.message }, '[ai] Merchant copilot controller error');
         return res.status(500).json({
             text: 'An error occurred while contacting the AI Copilot. Please try again.',
@@ -58,14 +72,28 @@ export const merchantActionHandler = async (req: AuthRequest, res: Response): Pr
 export const assistantHandler = async (req: AuthRequest, res: Response): Promise<any> => {
     try {
         const { message, history } = req.body;
-        if (!message) {
-            return res.status(400).json({ message: 'Message is required' });
+        if (typeof message !== 'string' || !message.trim()) {
+            return res.status(400).json({ message: 'User message cannot be empty' });
         }
 
         const userId = req.user ? (req.user as any)._id.toString() : undefined;
         const response = await AIService.customerAssistantChat(userId, message, history);
         return res.json(response);
     } catch (err: any) {
+        const errorCode = AIService.extractErrorCode(err);
+        const isBadRequest = errorCode === 400 ||
+            err?.status === 400 ||
+            err?.statusCode === 400 ||
+            err instanceof AIService.AiValidationError ||
+            (typeof err?.message === 'string' && (err.message.includes('400') || err.message.includes('INVALID_ARGUMENT')));
+
+        if (isBadRequest) {
+            return res.status(400).json({
+                message: err.message || 'Invalid request',
+                error: err.message || 'Invalid request',
+            });
+        }
+
         logger.error({ err: err.message }, '[ai] Customer assistant controller error');
         return res.status(500).json({
             text: 'I am temporarily experiencing connection difficulties. Please browse our products or check your cart directly.',

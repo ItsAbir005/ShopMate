@@ -217,9 +217,9 @@ export default function SupportAgent() {
 
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const history = messages.slice(-6).map((m) => ({
-        role: (m.role === "user" ? "user" : "model") as "user" | "model",
-        content: m.text,
+      const history = messages.slice(-10).map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        text: m.text,
       }));
 
       const res = await fetch(`${API}/ai/assistant`, {
@@ -235,7 +235,8 @@ export default function SupportAgent() {
       });
 
       if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Server returned ${res.status}`);
       }
 
       const data = await res.json();
@@ -255,7 +256,9 @@ export default function SupportAgent() {
     } catch (err: any) {
       setTyping(false);
       addAgentMessage(
-        "I'm temporarily having trouble reaching our AI services. You can browse our products directly or proceed to standard checkout."
+        err.message?.includes("empty")
+          ? "Please type a message to start our conversation."
+          : "I'm having a slight connection delay right now. You can browse our catalog, check your cart, or visit the Orders page directly!"
       );
     }
   }
