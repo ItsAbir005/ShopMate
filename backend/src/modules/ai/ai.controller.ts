@@ -35,6 +35,15 @@ export const merchantHandler = async (req: AuthRequest, res: Response): Promise<
             });
         }
 
+        const isTimeout = err?.message?.toLowerCase().includes('timed out') || err?.name === 'TimeoutError';
+        if (isTimeout) {
+            return res.status(504).json({
+                requestId,
+                text: 'The AI took too long, please try again.',
+                toolCalls: [],
+            });
+        }
+
         logger.error({ requestId, err: err.message }, '[ai] Merchant copilot controller error');
         return res.status(500).json({
             requestId,
@@ -65,6 +74,36 @@ export const merchantActionHandler = async (req: AuthRequest, res: Response): Pr
             requestId,
             success: false,
             message: err.message || 'Action execution failed',
+        });
+    }
+};
+
+/**
+ * POST /api/ai/merchant/quick-chip
+ * Direct read-only execution for quick action chips (Recent Transactions, Merchant Insights, Open Disputes, Invoices)
+ * No model call for insights; direct read-only PayPal calls with default 7-day parameters.
+ */
+export const merchantQuickChipHandler = async (req: AuthRequest, res: Response): Promise<any> => {
+    const requestId = `chip_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    try {
+        const { chipType } = req.body;
+        if (!chipType || !['transactions', 'insights', 'disputes', 'invoices'].includes(chipType)) {
+            return res.status(400).json({
+                requestId,
+                message: 'Valid chipType is required: transactions, insights, disputes, invoices',
+            });
+        }
+
+        const result = await AIService.executeQuickChipAction(chipType, requestId);
+        return res.json(result);
+    } catch (err: any) {
+        logger.error({ requestId, err: err.message }, '[ai] Quick chip controller error');
+        return res.status(500).json({
+            requestId,
+            ok: false,
+            text: `Failed to load ${req.body?.chipType || 'data'}: ${err.message}`,
+            toolCalls: [],
+            canSummarize: false,
         });
     }
 };

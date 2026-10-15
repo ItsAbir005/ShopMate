@@ -23,6 +23,10 @@ import {
 interface ToolCallInfo {
     toolName: string;
     summary: string;
+    ok?: boolean;
+    status?: number;
+    errorName?: string;
+    message?: string;
     resultCount?: number;
     subtitle?: string;
 }
@@ -43,13 +47,15 @@ interface Message {
     proposedAction?: ProposedAction;
     actionExecuted?: boolean;
     actionResult?: any;
+    canSummarize?: boolean;
+    summarized?: boolean;
 }
 
-const QUICK_PROMPTS = [
-    { label: "Recent Transactions", prompt: "List my latest PayPal transactions with amounts and statuses.", icon: Receipt },
-    { label: "Merchant Insights", prompt: "Retrieve my PayPal merchant insights and performance metrics.", icon: TrendingUp },
-    { label: "Open Disputes", prompt: "Check if there are any active customer disputes in my PayPal account.", icon: ShieldAlert },
-    { label: "List Invoices", prompt: "Show my recent invoices from PayPal.", icon: FileText },
+const QUICK_CHIPS = [
+    { id: "transactions", label: "Recent Transactions", icon: Receipt },
+    { id: "insights", label: "Merchant Insights", icon: TrendingUp },
+    { id: "disputes", label: "Open Disputes", icon: ShieldAlert },
+    { id: "invoices", label: "List Invoices", icon: FileText },
 ];
 
 export default function AdminCopilotPage() {
@@ -126,6 +132,61 @@ export default function AdminCopilotPage() {
         }
     };
 
+    const handleQuickChip = async (chipId: string, label: string) => {
+        if (loading) return;
+        setInput("");
+
+        const userMsg: Message = {
+            id: `usr_${Date.now()}`,
+            role: "user",
+            text: `View ${label}`,
+            timestamp: new Date(),
+        };
+
+        setMessages((prev) => [...prev, userMsg]);
+        setLoading(true);
+
+        try {
+            const token = localStorage.getItem("adminToken");
+            const res = await fetchApi("/ai/merchant/quick-chip", {
+                method: "POST",
+                body: JSON.stringify({ chipType: chipId }),
+                token: token || undefined,
+            });
+
+            const assistantMsg: Message = {
+                id: `ast_${Date.now()}`,
+                role: "assistant",
+                text: res.text,
+                timestamp: new Date(),
+                toolCalls: res.toolCalls || [],
+                canSummarize: res.canSummarize !== false,
+            };
+
+            setMessages((prev) => [...prev, assistantMsg]);
+        } catch (err: any) {
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: `err_${Date.now()}`,
+                    role: "assistant",
+                    text: `Failed to load ${label}: ${err.message || "Unknown error"}`,
+                    timestamp: new Date(),
+                },
+            ]);
+        } finally {
+            setLoading(false);
+            setTimeout(() => inputRef.current?.focus(), 100);
+        }
+    };
+
+    const handleSummarize = (msgId: string, text: string) => {
+        setMessages((prev) =>
+            prev.map((m) => (m.id === msgId ? { ...m, summarized: true } : m))
+        );
+        handleSend(`Please provide a concise executive summary and key business takeaways for this data:\n\n${text}`);
+    };
+
     const handleConfirmAction = async (msgId: string, action: ProposedAction) => {
         setExecutingActionId(action.id);
         try {
@@ -200,10 +261,10 @@ export default function AdminCopilotPage() {
 
                 {/* Quick actions bar */}
                 <div className="flex items-center gap-2 flex-wrap">
-                    {QUICK_PROMPTS.map(({ label, prompt, icon: Icon }) => (
+                    {QUICK_CHIPS.map(({ id, label, icon: Icon }) => (
                         <button
-                            key={label}
-                            onClick={() => handleSend(prompt)}
+                            key={id}
+                            onClick={() => handleQuickChip(id, label)}
                             disabled={loading}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-medium text-gray-700 hover:text-indigo-600 hover:border-indigo-200 transition-colors cursor-pointer disabled:opacity-50"
                         >
@@ -275,37 +336,57 @@ export default function AdminCopilotPage() {
                                     {m.toolCalls && m.toolCalls.length > 0 && (
                                         <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-2">
                                             {m.toolCalls.map((tc, idx) => {
+                                                const isFailed = tc.ok === false;
                                                 let subtitle = tc.subtitle;
-                                                if (!subtitle && tc.resultCount !== undefined) {
+                                                if (!isFailed && !subtitle && tc.resultCount !== undefined) {
                                                     subtitle = `PayPal returned ${tc.resultCount} ${tc.toolName === "list_transactions" ? "transactions" : "items"}`;
-                                                } else if (!subtitle && tc.summary) {
-                                                    if (tc.summary.includes("Retrieved") && tc.summary.includes("transactions")) {
-                                                        subtitle = tc.summary.replace("Retrieved", "PayPal returned");
-                                                    } else if (tc.summary.includes("Found") && tc.summary.includes("invoices")) {
-                                                        subtitle = tc.summary.replace("Found", "PayPal returned");
-                                                    }
                                                 }
 
                                                 return (
                                                     <div
                                                         key={idx}
-                                                        className="flex flex-col gap-1 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-700"
+                                                        className={`flex flex-col gap-1 px-3 py-2 rounded-lg text-xs ${
+                                                            isFailed
+                                                                ? "bg-red-50/70 border border-red-200 text-red-900"
+                                                                : "bg-gray-50 border border-gray-200 text-gray-700"
+                                                        }`}
                                                     >
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <Wrench className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                                                            <span className="font-mono font-semibold text-gray-800">{tc.toolName}</span>
+                                                            <Wrench className={`w-3.5 h-3.5 shrink-0 ${isFailed ? "text-red-600" : "text-indigo-600"}`} />
+                                                            <span className="font-mono font-semibold text-gray-900">{tc.toolName}</span>
                                                             <span className="text-gray-400">·</span>
-                                                            <span className="text-gray-600">{tc.summary}</span>
+                                                            <span className={isFailed ? "text-red-700 font-medium" : "text-gray-600"}>{tc.summary}</span>
                                                         </div>
-                                                        {subtitle && (
-                                                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded w-fit mt-0.5">
-                                                                <CheckCircle2 className="w-3 h-3 text-indigo-600 shrink-0" />
-                                                                <span>{subtitle}</span>
+                                                        {isFailed ? (
+                                                            <div className="flex items-center gap-1.5 text-[11px] font-medium text-red-700 bg-red-100/70 border border-red-200 px-2 py-0.5 rounded w-fit mt-0.5">
+                                                                <AlertCircle className="w-3 h-3 text-red-600 shrink-0" />
+                                                                <span>{tc.message || tc.summary}</span>
                                                             </div>
+                                                        ) : (
+                                                            subtitle && (
+                                                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded w-fit mt-0.5">
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                                    <span>{subtitle}</span>
+                                                                </div>
+                                                            )
                                                         )}
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+                                    )}
+
+                                    {/* Optional Summarize with AI Button */}
+                                    {m.canSummarize && !m.summarized && (
+                                        <div className="mt-3 pt-2 border-t border-gray-100">
+                                            <button
+                                                onClick={() => handleSummarize(m.id, m.text)}
+                                                disabled={loading}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-xs font-medium text-indigo-700 transition-colors cursor-pointer disabled:opacity-50"
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                                <span>Summarize with AI</span>
+                                            </button>
                                         </div>
                                     )}
 

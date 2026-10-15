@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assistantHandler = exports.merchantActionHandler = exports.merchantHandler = void 0;
+exports.assistantHandler = exports.merchantQuickChipHandler = exports.merchantActionHandler = exports.merchantHandler = void 0;
 const AIService = __importStar(require("./ai.service"));
 const logger_1 = require("../../utils/logger");
 /**
@@ -64,6 +64,14 @@ const merchantHandler = async (req, res) => {
                 requestId,
                 message: err.message || 'Invalid request',
                 error: err.message || 'Invalid request',
+            });
+        }
+        const isTimeout = err?.message?.toLowerCase().includes('timed out') || err?.name === 'TimeoutError';
+        if (isTimeout) {
+            return res.status(504).json({
+                requestId,
+                text: 'The AI took too long, please try again.',
+                toolCalls: [],
             });
         }
         logger_1.logger.error({ requestId, err: err.message }, '[ai] Merchant copilot controller error');
@@ -100,6 +108,36 @@ const merchantActionHandler = async (req, res) => {
     }
 };
 exports.merchantActionHandler = merchantActionHandler;
+/**
+ * POST /api/ai/merchant/quick-chip
+ * Direct read-only execution for quick action chips (Recent Transactions, Merchant Insights, Open Disputes, Invoices)
+ * No model call for insights; direct read-only PayPal calls with default 7-day parameters.
+ */
+const merchantQuickChipHandler = async (req, res) => {
+    const requestId = `chip_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    try {
+        const { chipType } = req.body;
+        if (!chipType || !['transactions', 'insights', 'disputes', 'invoices'].includes(chipType)) {
+            return res.status(400).json({
+                requestId,
+                message: 'Valid chipType is required: transactions, insights, disputes, invoices',
+            });
+        }
+        const result = await AIService.executeQuickChipAction(chipType, requestId);
+        return res.json(result);
+    }
+    catch (err) {
+        logger_1.logger.error({ requestId, err: err.message }, '[ai] Quick chip controller error');
+        return res.status(500).json({
+            requestId,
+            ok: false,
+            text: `Failed to load ${req.body?.chipType || 'data'}: ${err.message}`,
+            toolCalls: [],
+            canSummarize: false,
+        });
+    }
+};
+exports.merchantQuickChipHandler = merchantQuickChipHandler;
 /**
  * POST /api/ai/assistant
  * Customer Shopping Assistant (SupportAgent widget).

@@ -11,6 +11,7 @@ router.use(ai_middleware_1.aiRateLimiter);
 // ── Admin Merchant Agent ──────────────────────────────────────────────────────
 router.post('/merchant', auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, ai_controller_1.merchantHandler);
 router.post('/merchant/action', auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, ai_controller_1.merchantActionHandler);
+router.post('/merchant/quick-chip', auth_middleware_1.authMiddleware, admin_middleware_1.adminMiddleware, ai_controller_1.merchantQuickChipHandler);
 // ── Customer Shopping Assistant ───────────────────────────────────────────────
 router.post('/assistant', ai_middleware_1.optionalAuthMiddleware, ai_controller_1.assistantHandler);
 exports.default = router;

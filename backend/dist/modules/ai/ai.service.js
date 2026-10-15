@@ -44,7 +44,13 @@ exports.customerAssistantChat = customerAssistantChat;
 exports.extractPayPalErrorReason = extractPayPalErrorReason;
 exports.getRedactedArgs = getRedactedArgs;
 exports.clampTransactionDates = clampTransactionDates;
+exports.inspectPayPalToolResult = inspectPayPalToolResult;
 exports.formatToolResultDetails = formatToolResultDetails;
+exports.getLocalDatabaseInsights = getLocalDatabaseInsights;
+exports.formatTransactionsTable = formatTransactionsTable;
+exports.formatDisputesTable = formatDisputesTable;
+exports.formatInvoicesTable = formatInvoicesTable;
+exports.executeQuickChipAction = executeQuickChipAction;
 exports.merchantChat = merchantChat;
 exports.executeMerchantAction = executeMerchantAction;
 const genai_1 = require("@google/genai");
@@ -128,7 +134,7 @@ function extractErrorCode(err) {
  * - makes sure the final item is the new user message, rejecting with HTTP 400 if empty
  * - limits history to the last ~10 messages
  */
-function buildGeminiContents(newMessage, rawHistory = []) {
+function buildGeminiContents(newMessage, rawHistory = [], maxHistory = 10) {
     if (typeof newMessage !== 'string' || !newMessage.trim()) {
         throw new AiValidationError('User message cannot be empty');
     }
@@ -161,7 +167,7 @@ function buildGeminiContents(newMessage, rawHistory = []) {
             });
         }
     }
-    const limited = cleaned.slice(-10);
+    const limited = cleaned.slice(-maxHistory);
     const alternating = [];
     for (const item of limited) {
         if (alternating.length > 0 && alternating[alternating.length - 1].role === item.role) {
@@ -677,12 +683,22 @@ function extractPayPalErrorReason(toolName, err, args) {
     const lower = rawMsg.toLowerCase();
     if (lower.includes('not_authorized') ||
         lower.includes('permission_denied') ||
+        lower.includes('insufficient permissions') ||
         lower.includes('not enabled') ||
         lower.includes('no permission') ||
         lower.includes('unauthorized') ||
         lower.includes('authorization_error')) {
+        if (toolName === 'get_merchant_insights') {
+            return 'PayPal denied this request: Merchant Insights is not enabled for this app';
+        }
         if (toolName === 'list_transactions') {
             return 'PayPal denied this request: Transaction Search is not enabled for this app in PayPal Developer Dashboard';
+        }
+        if (toolName === 'list_disputes') {
+            return 'PayPal denied this request: Disputes access is not enabled for this app';
+        }
+        if (toolName === 'list_invoices') {
+            return 'PayPal denied this request: Invoicing access is not enabled for this app';
         }
         return `PayPal denied this request: ${toolName} permission is not enabled for this app`;
     }
@@ -759,76 +775,425 @@ function clampTransactionDates(args, now) {
     safeArgs.end_date = endDate.toISOString();
     return { args: safeArgs, clamped };
 }
-function formatToolResultDetails(toolName, data, args) {
-    if (!data) {
+function inspectPayPalToolResult(toolName, data, args, thrownErr) {
+    let rawObj = data;
+    if (typeof data === 'string') {
+        try {
+            rawObj = JSON.parse(data);
+        }
+        catch {
+            rawObj = { message: data };
+        }
+    }
+    const rawString = typeof data === 'string' ? data : JSON.stringify(data || {});
+    const thrownMsg = thrownErr ? (thrownErr.message || String(thrownErr)) : '';
+    const combinedLower = `${rawString} ${thrownMsg}`.toLowerCase();
+    // Check status
+    let status = 200;
+    if (thrownErr?.status || thrownErr?.statusCode) {
+        status = Number(thrownErr.status || thrownErr.statusCode);
+    }
+    else if (rawObj?.status || rawObj?.statusCode || rawObj?.httpStatusCode) {
+        status = Number(rawObj.status || rawObj.statusCode || rawObj.httpStatusCode);
+    }
+    else {
+        const match = combinedLower.match(/\b(4\d\d|5\d\d)\b/);
+        if (match)
+            status = parseInt(match[1], 10);
+    }
+    // Check failure indicators: HTTP >= 400, error body (errors, name, message, NOT_AUTHORIZED, "insufficient permissions")
+    const hasErrorStatus = status >= 400;
+    const hasErrorName = Boolean(rawObj?.name &&
+        (rawObj.name === 'NOT_AUTHORIZED' ||
+            rawObj.name === 'PERMISSION_DENIED' ||
+            rawObj.name === 'AUTHENTICATION_FAILURE' ||
+            rawObj.name === 'INVALID_REQUEST' ||
+            rawObj.name.includes('ERROR') ||
+            rawObj.name.includes('DENIED') ||
+            rawObj.name.includes('FAIL')));
+    const hasErrorProperty = Boolean(rawObj?.error || (Array.isArray(rawObj?.errors) && rawObj.errors.length > 0));
+    const hasErrorPhrases = combinedLower.includes('not_authorized') ||
+        combinedLower.includes('insufficient permissions') ||
+        combinedLower.includes('permission denied') ||
+        combinedLower.includes('no permission') ||
+        combinedLower.includes('not enabled') ||
+        combinedLower.includes('access denied') ||
+        combinedLower.includes('unauthorized') ||
+        combinedLower.includes('authorization error');
+    const isError = Boolean(thrownErr) || hasErrorStatus || hasErrorName || hasErrorProperty || hasErrorPhrases;
+    if (isError) {
+        const errorStatus = status >= 400 ? status : 403;
+        const errorName = rawObj?.name || rawObj?.error || thrownErr?.name || (errorStatus === 403 ? 'NOT_AUTHORIZED' : 'PayPalError');
+        const errorMsg = rawObj?.message ||
+            (Array.isArray(rawObj?.errors) ? rawObj.errors.map((e) => e.message || e).join('; ') : '') ||
+            thrownErr?.message ||
+            'Request failed';
+        const plainReason = extractPayPalErrorReason(toolName, { name: errorName, message: errorMsg }, args);
         return {
-            summary: `Called ${toolName}`,
-            subtitle: `PayPal returned no data`,
+            isError: true,
+            status: errorStatus,
+            errorName,
+            errorMessage: errorMsg,
+            plainReason,
             resultCount: 0,
-            httpStatus: 200,
+            subtitle: plainReason,
+            summary: plainReason,
         };
     }
-    if (data.error || data.name === 'NOT_AUTHORIZED' || data.name === 'PERMISSION_DENIED') {
-        const errReason = extractPayPalErrorReason(toolName, data.error || data, args);
-        return {
-            summary: errReason,
-            subtitle: `PayPal error: ${errReason}`,
-            resultCount: 0,
-            errorReason: errReason,
-            httpStatus: data.status || 403,
-        };
-    }
+    // Success case: compute count and subtitle
+    let count = 0;
+    let subtitle = `PayPal executed ${toolName}`;
+    let summary = `Successfully executed ${toolName}`;
     if (toolName === 'list_transactions') {
-        const count = Array.isArray(data.transaction_details) ? data.transaction_details.length : 0;
+        count = Array.isArray(rawObj?.transaction_details) ? rawObj.transaction_details.length : 0;
         const startStr = args?.start_date ? args.start_date.split('T')[0] : '';
         const endStr = args?.end_date ? args.end_date.split('T')[0] : '';
         const dateRangeStr = startStr && endStr ? ` between ${startStr} and ${endStr}` : '';
-        if (count === 0) {
-            return {
-                summary: `No transactions found${dateRangeStr}`,
-                subtitle: `PayPal returned 0 transactions`,
-                resultCount: 0,
-                httpStatus: 200,
-            };
-        }
-        return {
-            summary: `Retrieved ${count} transactions from PayPal${dateRangeStr}`,
-            subtitle: `PayPal returned ${count} transaction${count === 1 ? '' : 's'}`,
-            resultCount: count,
-            httpStatus: 200,
-        };
+        subtitle = `PayPal returned ${count} transaction${count === 1 ? '' : 's'}`;
+        summary = count === 0 ? `No transactions found${dateRangeStr}` : `Retrieved ${count} transactions from PayPal${dateRangeStr}`;
     }
-    if (toolName === 'list_invoices' || toolName === 'search_invoicing') {
-        const count = Array.isArray(data.items) ? data.items.length : (data.total_items || 0);
-        return {
-            summary: `Found ${count} invoices in PayPal account`,
-            subtitle: `PayPal returned ${count} invoice${count === 1 ? '' : 's'}`,
-            resultCount: count,
-            httpStatus: 200,
-        };
+    else if (toolName === 'list_invoices' || toolName === 'search_invoicing') {
+        count = Array.isArray(rawObj?.items) ? rawObj.items.length : (rawObj?.total_items || 0);
+        subtitle = `PayPal returned ${count} invoice${count === 1 ? '' : 's'}`;
+        summary = `Found ${count} invoices in PayPal account`;
     }
-    if (toolName === 'list_disputes') {
-        const count = Array.isArray(data.items) ? data.items.length : 0;
-        return {
-            summary: `Retrieved ${count} dispute records`,
-            subtitle: `PayPal returned ${count} dispute${count === 1 ? '' : 's'}`,
-            resultCount: count,
-            httpStatus: 200,
-        };
+    else if (toolName === 'list_disputes') {
+        count = Array.isArray(rawObj?.items) ? rawObj.items.length : 0;
+        subtitle = `PayPal returned ${count} dispute${count === 1 ? '' : 's'}`;
+        summary = `Retrieved ${count} dispute records`;
     }
-    if (toolName === 'get_merchant_insights') {
-        return {
-            summary: 'Retrieved PayPal business analytics and metrics',
-            subtitle: 'PayPal returned business analytics',
-            resultCount: 1,
-            httpStatus: 200,
-        };
+    else if (toolName === 'get_merchant_insights') {
+        count = 1;
+        subtitle = 'PayPal returned business analytics';
+        summary = 'Retrieved PayPal business analytics and metrics';
     }
     return {
-        summary: `Successfully executed ${toolName}`,
-        subtitle: `PayPal executed ${toolName}`,
-        resultCount: 1,
-        httpStatus: 200,
+        isError: false,
+        status: 200,
+        errorName: '',
+        errorMessage: '',
+        plainReason: '',
+        resultCount: count,
+        subtitle,
+        summary,
+    };
+}
+function formatToolResultDetails(toolName, data, args) {
+    const inspection = inspectPayPalToolResult(toolName, data, args);
+    return {
+        summary: inspection.summary,
+        subtitle: inspection.subtitle,
+        resultCount: inspection.resultCount,
+        errorReason: inspection.isError ? inspection.plainReason : undefined,
+        httpStatus: inspection.status,
+        ok: !inspection.isError,
+    };
+}
+// ─── ShopMate Local Database Insights (Fallback & Direct Chip) ────────────────
+async function getLocalDatabaseInsights() {
+    const orders = await Order_1.Order.find({}).lean();
+    let totalRevenue = 0;
+    let paidOrdersCount = 0;
+    const ordersByStatus = {};
+    const ordersByAiRisk = {};
+    const productSalesMap = new Map();
+    // Last 7 days map (UTC)
+    const now = new Date();
+    const dailyMap = new Map();
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const dateKey = d.toISOString().split('T')[0];
+        dailyMap.set(dateKey, { count: 0, revenue: 0 });
+    }
+    const sevenDaysAgoMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    for (const order of orders) {
+        // Status count
+        const status = (order.status || 'pending').toLowerCase();
+        ordersByStatus[status] = (ordersByStatus[status] || 0) + 1;
+        // Paid revenue check: status is paid, shipped, or delivered, or payment_status is paid
+        const isPaid = order.payment_status === 'paid' || status === 'paid' || status === 'shipped' || status === 'delivered';
+        const orderAmount = typeof order.total_amount === 'number' ? order.total_amount : 0;
+        if (isPaid) {
+            totalRevenue += orderAmount;
+            paidOrdersCount += 1;
+        }
+        // AI risk decision
+        const riskDecision = order.aiRisk?.decision ? String(order.aiRisk.decision).toUpperCase() : 'UNASSESSED';
+        ordersByAiRisk[riskDecision] = (ordersByAiRisk[riskDecision] || 0) + 1;
+        // Orders per day in the last 7 days
+        const createdAt = order.createdAt ? new Date(order.createdAt) : null;
+        if (createdAt && !isNaN(createdAt.getTime()) && createdAt.getTime() >= sevenDaysAgoMs) {
+            const dateKey = createdAt.toISOString().split('T')[0];
+            const dayEntry = dailyMap.get(dateKey);
+            if (dayEntry) {
+                dayEntry.count += 1;
+                if (isPaid) {
+                    dayEntry.revenue += orderAmount;
+                }
+            }
+        }
+        // Top products by quantity
+        if (Array.isArray(order.order_items)) {
+            for (const item of order.order_items) {
+                const title = item.title || 'Product';
+                const qty = item.quantity || 1;
+                const price = item.price || 0;
+                const current = productSalesMap.get(title) || { title, quantity: 0, revenue: 0 };
+                current.quantity += qty;
+                current.revenue += qty * price;
+                productSalesMap.set(title, current);
+            }
+        }
+    }
+    const averageOrderValue = paidOrdersCount > 0 ? totalRevenue / paidOrdersCount : 0;
+    const ordersPerDayLast7Days = Array.from(dailyMap.entries()).map(([date, val]) => ({
+        date,
+        count: val.count,
+        revenue: Math.round(val.revenue * 100) / 100,
+    }));
+    const topProducts = Array.from(productSalesMap.values())
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 3);
+    const label = 'Based on ShopMate order data (PayPal Insights is not available for this app)';
+    // Build clear markdown tables
+    const tableMarkdown = buildLocalInsightsMarkdown({
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        paidOrdersCount,
+        averageOrderValue: Math.round(averageOrderValue * 100) / 100,
+        ordersByStatus,
+        ordersPerDayLast7Days,
+        topProducts,
+        ordersByAiRisk,
+        label,
+    });
+    return {
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        paidOrdersCount,
+        averageOrderValue: Math.round(averageOrderValue * 100) / 100,
+        ordersByStatus,
+        ordersPerDayLast7Days,
+        topProducts,
+        ordersByAiRisk,
+        tableMarkdown,
+        label,
+    };
+}
+function buildLocalInsightsMarkdown(data) {
+    const statusRows = Object.entries(data.ordersByStatus)
+        .map(([st, cnt]) => `| ${st.charAt(0).toUpperCase() + st.slice(1)} | ${cnt} |`)
+        .join('\n') || '| None | 0 |';
+    const dailyRows = data.ordersPerDayLast7Days
+        .map((d) => `| ${d.date} | ${d.count} | $${d.revenue.toFixed(2)} |`)
+        .join('\n') || '| - | 0 | $0.00 |';
+    const productRows = data.topProducts
+        .map((p, idx) => `| #${idx + 1} ${p.title} | ${p.quantity} | $${p.revenue.toFixed(2)} |`)
+        .join('\n') || '| No product sales yet | 0 | $0.00 |';
+    const riskRows = Object.entries(data.ordersByAiRisk)
+        .map(([risk, cnt]) => `| ${risk} | ${cnt} |`)
+        .join('\n') || '| None | 0 |';
+    return `**${data.label}**
+
+### Performance Overview
+| Metric | Value |
+|---|---|
+| Total Revenue (Paid) | $${data.totalRevenue.toFixed(2)} |
+| Paid Orders | ${data.paidOrdersCount} |
+| Average Order Value (AOV) | $${data.averageOrderValue.toFixed(2)} |
+
+### Orders by Status
+| Status | Count |
+|---|---|
+${statusRows}
+
+### Orders per Day (Last 7 Days)
+| Date | Orders | Revenue |
+|---|---|---|
+${dailyRows}
+
+### Top 3 Products by Quantity
+| Product | Units Sold | Revenue |
+|---|---|---|
+${productRows}
+
+### Orders by AI Risk Decision
+| AI Risk Decision | Count |
+|---|---|
+${riskRows}`;
+}
+// ─── Table Formatters for Quick Chips ─────────────────────────────────────────
+function formatTransactionsTable(transactions) {
+    if (!transactions || transactions.length === 0) {
+        return 'No transactions found for the specified period (last 7 days).';
+    }
+    const rows = transactions.map((t) => {
+        const info = t.transaction_info || {};
+        const id = info.transaction_id || '-';
+        const date = info.transaction_initiation_date ? info.transaction_initiation_date.split('T')[0] : '-';
+        const status = info.transaction_status || '-';
+        const gross = info.transaction_amount ? `${info.transaction_amount.currency_code || 'USD'} ${info.transaction_amount.value}` : '-';
+        const fee = info.fee_amount ? `${info.fee_amount.currency_code || 'USD'} ${info.fee_amount.value}` : '$0.00';
+        const net = info.net_amount ? `${info.net_amount.currency_code || 'USD'} ${info.net_amount.value}` : gross;
+        return `| ${date} | \`${id}\` | ${status} | ${gross} | ${fee} | ${net} |`;
+    });
+    return `### Recent PayPal Transactions (Last 7 Days)
+
+| Date | Transaction ID | Status | Gross | Fee | Net |
+|---|---|---|---|---|---|
+${rows.join('\n')}`;
+}
+function formatDisputesTable(disputes) {
+    if (!disputes || disputes.length === 0) {
+        return 'No active customer disputes found in your PayPal account.';
+    }
+    const rows = disputes.map((d) => {
+        const id = d.dispute_id || '-';
+        const status = d.status || d.dispute_state || '-';
+        const reason = d.reason ? d.reason.replace(/_/g, ' ') : 'General dispute';
+        const amount = d.dispute_amount ? `${d.dispute_amount.currency_code || 'USD'} ${d.dispute_amount.value}` : '-';
+        const date = d.create_time ? d.create_time.split('T')[0] : '-';
+        return `| \`${id}\` | ${status} | ${reason} | ${amount} | ${date} |`;
+    });
+    return `### Open PayPal Disputes
+
+| Dispute ID | Status | Reason | Disputed Amount | Created Date |
+|---|---|---|---|---|
+${rows.join('\n')}`;
+}
+function formatInvoicesTable(invoices) {
+    if (!invoices || invoices.length === 0) {
+        return 'No invoices found in your PayPal account.';
+    }
+    const rows = invoices.map((inv) => {
+        const id = inv.id || inv.invoice_number || '-';
+        const recipient = inv.primary_recipients?.[0]?.billing_info?.name?.full_name || inv.primary_recipients?.[0]?.billing_info?.email_address || 'Customer';
+        const amount = inv.amount ? `${inv.amount.currency_code || 'USD'} ${inv.amount.value}` : '-';
+        const status = inv.status ? inv.status.replace(/_/g, ' ') : '-';
+        const date = inv.detail?.invoice_date || '-';
+        const dueDate = inv.detail?.payment_term?.due_date || '-';
+        return `| \`${id}\` | ${recipient} | ${amount} | ${status} | ${date} | ${dueDate} |`;
+    });
+    return `### PayPal Invoices
+
+| Invoice # | Recipient | Amount | Status | Invoice Date | Due Date |
+|---|---|---|---|---|---|
+${rows.join('\n')}`;
+}
+// ─── Quick Chip Direct Handler (No Model Call for Insights, Direct for Read-only) ─
+async function executeQuickChipAction(chipType, customRequestId) {
+    const requestId = customRequestId || `chip_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    if (chipType === 'insights') {
+        const localInsights = await getLocalDatabaseInsights();
+        return {
+            ok: true,
+            toolName: 'merchant_insights',
+            text: localInsights.tableMarkdown,
+            toolCalls: [{
+                    toolName: 'merchant_insights',
+                    summary: 'ShopMate Database Insights',
+                    ok: true,
+                    status: 200,
+                    subtitle: 'Based on ShopMate order data',
+                }],
+            canSummarize: true,
+            requestId,
+        };
+    }
+    const toolkit = (0, paypal_toolkit_1.getPayPalToolkit)();
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const nowIso = now.toISOString();
+    let toolName = 'list_transactions';
+    let args = {};
+    if (chipType === 'transactions') {
+        toolName = 'list_transactions';
+        args = { start_date: sevenDaysAgo, end_date: nowIso };
+    }
+    else if (chipType === 'disputes') {
+        toolName = 'list_disputes';
+        args = {};
+    }
+    else if (chipType === 'invoices') {
+        toolName = 'list_invoices';
+        args = { page_size: 10 };
+    }
+    let parsedContent = null;
+    let inspection;
+    try {
+        const toolResp = await toolkit.handleToolCall({
+            id: `chip_call_${Date.now()}`,
+            type: 'function',
+            function: {
+                name: toolName,
+                arguments: JSON.stringify(args),
+            },
+        });
+        try {
+            parsedContent = typeof toolResp.content === 'string' ? JSON.parse(toolResp.content) : toolResp.content;
+        }
+        catch {
+            parsedContent = toolResp.content;
+        }
+        inspection = inspectPayPalToolResult(toolName, parsedContent, args);
+    }
+    catch (toolErr) {
+        inspection = inspectPayPalToolResult(toolName, null, args, toolErr);
+    }
+    if (inspection.isError) {
+        logger_1.logger.warn({
+            requestId,
+            toolName,
+            paypalHttpStatus: inspection.status,
+            errorName: inspection.errorName,
+            errorMessage: redactErrorMessage(inspection.errorMessage),
+        }, '[paypal] Tool execution failed');
+        return {
+            ok: false,
+            toolName,
+            text: `**PayPal Request Failed**\n\n${inspection.plainReason}`,
+            toolCalls: [{
+                    toolName,
+                    summary: inspection.plainReason,
+                    ok: false,
+                    status: inspection.status,
+                    errorName: inspection.errorName,
+                    message: inspection.plainReason,
+                    subtitle: inspection.plainReason,
+                }],
+            canSummarize: false,
+            requestId,
+        };
+    }
+    logger_1.logger.info({
+        requestId,
+        toolName,
+        redactedArgs: getRedactedArgs(args),
+        paypalHttpStatus: 200,
+        resultCount: inspection.resultCount,
+    }, '[paypal] Tool execution succeeded');
+    let text = '';
+    if (chipType === 'transactions') {
+        text = formatTransactionsTable(parsedContent?.transaction_details || []);
+    }
+    else if (chipType === 'disputes') {
+        text = formatDisputesTable(parsedContent?.items || []);
+    }
+    else if (chipType === 'invoices') {
+        text = formatInvoicesTable(parsedContent?.items || []);
+    }
+    return {
+        ok: true,
+        toolName,
+        text,
+        toolCalls: [{
+                toolName,
+                summary: inspection.summary,
+                ok: true,
+                status: 200,
+                resultCount: inspection.resultCount,
+                subtitle: inspection.subtitle,
+            }],
+        canSummarize: true,
+        requestId,
     };
 }
 function buildFallbackToolSummary(toolCalls, functionResponses) {
@@ -842,6 +1207,7 @@ function buildFallbackToolSummary(toolCalls, functionResponses) {
     }
     return lines.join('\n\n');
 }
+// ─── Merchant Copilot Chat Execution ─────────────────────────────────────────
 async function merchantChat(adminId, message, history = [], actionConfirmed, customRequestId) {
     const requestId = customRequestId || `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
     const toolkit = (0, paypal_toolkit_1.getPayPalToolkit)();
@@ -852,7 +1218,12 @@ async function merchantChat(adminId, message, history = [], actionConfirmed, cus
         const execResult = await executeMerchantAction(actionConfirmed.toolName, actionConfirmed.parameters, requestId);
         return {
             text: `Action **${actionConfirmed.toolName}** executed successfully.\n\nResult:\n\`\`\`json\n${JSON.stringify(execResult.result, null, 2)}\n\`\`\``,
-            toolCalls: [{ toolName: actionConfirmed.toolName, summary: execResult.summary, subtitle: execResult.summary }],
+            toolCalls: [{
+                    toolName: actionConfirmed.toolName,
+                    summary: execResult.summary,
+                    ok: execResult.success,
+                    subtitle: execResult.summary,
+                }],
             requestId,
         };
     }
@@ -898,7 +1269,7 @@ STRICT DATE HANDLING RULES:
    - A single date: treat it as that entire 24-hour day (00:00:00Z to 23:59:59Z on that date).
 3. PAYPAL 31-DAY TRANSACTION SEARCH LIMIT:
    - PayPal transaction search (list_transactions) strictly allows a maximum interval of 31 days between start_date and end_date.
-   - NEVER send a date range greater than 31 days to list_transactions. If the user asks for a wider range (e.g. "last 60 days"), clamp to the most recent 31-day interval and note this PayPal restriction in your answer.
+   - NEVER send a date range greater than 31 days to list_transactions.
    - All dates passed to PayPal tools MUST be full ISO 8601 strings with timezone (e.g. '${nowIso}').
 
 CAPABILITIES:
@@ -912,29 +1283,36 @@ IMPORTANT RULES:
 1. Always utilize the PayPal tools when asked for transactions, invoices, disputes, or metrics.
 2. Read-only tools execute automatically.
 3. If the merchant asks to create or send an invoice or make any changes, call the corresponding tool. The system will safely present a proposed action for admin confirmation before writing to PayPal.
-4. Format numbers, currencies, and dates cleanly. Always cite the PayPal data retrieved.
-5. If transactions or items are returned, summarize them with key metrics (total count, gross volume, fees, net amounts, and statuses).`;
+4. If transactions or items are returned, summarize them with key metrics (total count, gross volume, fees, net amounts, and statuses).`;
+    // Latency optimization: configure model with low reasoning/thinking level if supported
+    const thinkingConfig = (clientInfo.model.includes('2.5') || clientInfo.model.includes('thinking'))
+        ? { thinkingLevel: genai_1.ThinkingLevel.LOW }
+        : undefined;
     const toolCalls = [];
+    const executedToolSignatures = new Set();
+    const failedToolNames = new Set();
     let proposedAction;
-    let stage = 'building contents';
-    try {
-        stage = 'building contents';
-        const contents = buildGeminiContents(message, history);
-        const runTurn = async () => {
-            stage = 'model call';
-            const response1 = await clientInfo.ai.models.generateContent({
+    // Run merchant flow with 45-second total request limit
+    const runMerchantFlow = async () => {
+        // Keep history short (last 4 items) for low latency
+        const contents = buildGeminiContents(message, history, 4);
+        let finalResponseText = '';
+        const MAX_TOOL_ITERATIONS = 2;
+        for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+            // 20-second timeout per model call
+            const response = await withTimeout(clientInfo.ai.models.generateContent({
                 model: clientInfo.model,
                 contents: contents,
                 config: {
                     systemInstruction,
                     tools: [{ functionDeclarations }],
                     temperature: 0.1,
+                    thinkingConfig,
                 },
-            });
-            const funcCalls = response1.functionCalls;
+            }), 20000);
+            const funcCalls = response.functionCalls;
             if (!funcCalls || funcCalls.length === 0) {
-                let directText = response1.text?.trim() || '';
-                // If directText is empty, do NOT fall back to generic phrase for queries!
+                let directText = response.text?.trim() || '';
                 if (!directText) {
                     const isGreeting = /^(hi|hello|hey|greetings|good\s*(morning|afternoon|evening))/i.test(message.trim()) && history.length <= 1;
                     if (isGreeting) {
@@ -942,30 +1320,27 @@ IMPORTANT RULES:
                     }
                     else {
                         logger_1.logger.info({ requestId }, '[ai] No function call and empty text, prompting direct answer');
-                        const directAnswer = await clientInfo.ai.models.generateContent({
+                        const directAnswer = await withTimeout(clientInfo.ai.models.generateContent({
                             model: clientInfo.model,
                             contents: [
                                 { role: 'user', parts: [{ text: `${systemInstruction}\n\nMerchant question: ${message}\n\nPlease answer the merchant clearly and directly.` }] }
                             ],
-                            config: { temperature: 0.2 },
-                        });
+                            config: { temperature: 0.2, thinkingConfig },
+                        }), 20000);
                         directText = directAnswer.text?.trim() || `I received your request regarding "${message}". However, no data was returned from PayPal. You can ask for "recent transactions", "merchant insights", or "open disputes".`;
                     }
                 }
-                return {
-                    text: directText,
-                    toolCalls: [],
-                    requestId,
-                };
+                finalResponseText = directText;
+                break;
             }
+            // Function calls present
             const functionResponses = [];
-            stage = 'tool execution';
             for (const fc of funcCalls) {
                 const name = fc.name || '';
                 if (!name)
                     continue;
                 let args = fc.args || {};
-                // Intercept write actions: do NOT run automatically, propose to admin
+                // Intercept write actions: propose to admin
                 if ((0, paypal_toolkit_1.isWriteAction)(name)) {
                     proposedAction = {
                         id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -976,9 +1351,9 @@ IMPORTANT RULES:
                     toolCalls.push({
                         toolName: name,
                         summary: `Action Proposed: ${name} (Awaiting Admin Confirmation)`,
-                        subtitle: `Awaiting admin confirmation`,
+                        ok: true,
+                        subtitle: 'Awaiting admin confirmation',
                     });
-                    // Skip execution, return proposed action
                     return {
                         text: `I have prepared the action **${name}**. Please review the parameters below and click **Confirm Action** to execute it in PayPal.`,
                         toolCalls,
@@ -986,13 +1361,31 @@ IMPORTANT RULES:
                         requestId,
                     };
                 }
-                // If list_transactions, enforce 31-day clamping and default date range in code
+                // Never repeat an identical or failed tool call in the same request
+                const signature = `${name}:${JSON.stringify(args)}`;
+                if (failedToolNames.has(name)) {
+                    functionResponses.push({
+                        name,
+                        response: { error: `Tool ${name} previously failed and cannot be repeated in this request.` },
+                    });
+                    continue;
+                }
+                if (executedToolSignatures.has(signature)) {
+                    functionResponses.push({
+                        name,
+                        response: { error: `Tool ${name} was already executed with these arguments.` },
+                    });
+                    continue;
+                }
+                executedToolSignatures.add(signature);
+                // Date clamping for transaction search
                 if (name === 'list_transactions') {
                     const clampedResult = clampTransactionDates(args, now);
                     args = clampedResult.args;
                 }
                 const redactedArgs = getRedactedArgs(args);
-                // Read-only tool execution
+                let parsedContent = null;
+                let inspection;
                 try {
                     const toolResp = await toolkit.handleToolCall({
                         id: `call_${Date.now()}`,
@@ -1002,61 +1395,82 @@ IMPORTANT RULES:
                             arguments: JSON.stringify(args),
                         },
                     });
-                    let parsedContent = toolResp.content;
                     try {
                         parsedContent = typeof toolResp.content === 'string' ? JSON.parse(toolResp.content) : toolResp.content;
                     }
                     catch {
-                        // Keep as string
+                        parsedContent = toolResp.content;
                     }
-                    const details = formatToolResultDetails(name, parsedContent, args);
+                    inspection = inspectPayPalToolResult(name, parsedContent, args);
+                }
+                catch (toolErr) {
+                    inspection = inspectPayPalToolResult(name, null, args, toolErr);
+                }
+                if (inspection.isError) {
+                    // Log at warn level once
+                    logger_1.logger.warn({
+                        requestId,
+                        toolName: name,
+                        paypalHttpStatus: inspection.status,
+                        errorName: inspection.errorName,
+                        errorMessage: redactErrorMessage(inspection.errorMessage),
+                    }, '[paypal] Tool execution failed');
+                    // Mark failed so it will never be called again
+                    failedToolNames.add(name);
                     toolCalls.push({
                         toolName: name,
-                        summary: details.summary,
-                        resultCount: details.resultCount,
-                        subtitle: details.subtitle,
+                        summary: inspection.plainReason,
+                        ok: false,
+                        status: inspection.status,
+                        errorName: inspection.errorName,
+                        message: inspection.plainReason,
+                        resultCount: 0,
+                        subtitle: inspection.plainReason,
                     });
+                    // If get_merchant_insights fails, build insights from our own database!
+                    if (name === 'get_merchant_insights') {
+                        const localInsights = await getLocalDatabaseInsights();
+                        functionResponses.push({
+                            name,
+                            response: {
+                                error: inspection.plainReason,
+                                fallbackSource: 'ShopMate Database Insights',
+                                localInsights,
+                            },
+                        });
+                    }
+                    else {
+                        functionResponses.push({
+                            name,
+                            response: { error: inspection.plainReason },
+                        });
+                    }
+                }
+                else {
+                    // Log at info level once
                     logger_1.logger.info({
                         requestId,
                         toolName: name,
                         redactedArgs,
-                        paypalHttpStatus: details.httpStatus,
-                        resultCount: details.resultCount,
+                        paypalHttpStatus: 200,
+                        resultCount: inspection.resultCount,
                     }, '[paypal] Tool execution succeeded');
+                    toolCalls.push({
+                        toolName: name,
+                        summary: inspection.summary,
+                        ok: true,
+                        status: 200,
+                        resultCount: inspection.resultCount,
+                        subtitle: inspection.subtitle,
+                    });
                     functionResponses.push({
                         name,
                         response: { output: parsedContent },
                     });
                 }
-                catch (toolErr) {
-                    const plainReason = extractPayPalErrorReason(name, toolErr, args);
-                    const statusMatch = (toolErr.message || '').match(/\b(4\d\d|5\d\d)\b/);
-                    const httpStatus = toolErr.status || toolErr.statusCode || (statusMatch ? parseInt(statusMatch[1], 10) : 500);
-                    logger_1.logger.warn({
-                        requestId,
-                        stage: 'tool execution',
-                        toolName: name,
-                        redactedArgs,
-                        paypalHttpStatus: httpStatus,
-                        errorName: toolErr.name || 'PayPalToolError',
-                        errorMessage: redactErrorMessage(toolErr.message),
-                        resultCount: 0,
-                    }, '[paypal] Tool execution failed');
-                    toolCalls.push({
-                        toolName: name,
-                        summary: plainReason,
-                        resultCount: 0,
-                        subtitle: plainReason,
-                    });
-                    functionResponses.push({
-                        name,
-                        response: { error: plainReason },
-                    });
-                }
             }
-            // Second turn with tool results
-            stage = 'tool result';
-            const candidateParts = response1.candidates?.[0]?.content?.parts || [];
+            // Append turn parts to contents
+            const candidateParts = response.candidates?.[0]?.content?.parts || [];
             contents.push({
                 role: 'model',
                 parts: candidateParts,
@@ -1065,47 +1479,62 @@ IMPORTANT RULES:
                 role: 'user',
                 parts: functionResponses.map(fr => ({ functionResponse: fr })),
             });
-            const response2 = await clientInfo.ai.models.generateContent({
-                model: clientInfo.model,
-                contents: contents,
-                config: {
-                    systemInstruction,
-                    temperature: 0.1,
-                },
-            });
-            let responseText = response2.text?.trim() || '';
-            // If the model returns no text after a tool call, run a second turn to summarize the tool result
-            if (!responseText) {
-                logger_1.logger.info({ requestId }, '[ai] Second turn returned empty text, requesting tool summary');
-                contents.push({
-                    role: 'user',
-                    parts: [{ text: 'Please summarize the PayPal tool results above clearly for the merchant in markdown, including counts, amounts, statuses, and any key details.' }],
-                });
-                const responseSummary = await clientInfo.ai.models.generateContent({
+        }
+        // Generate final response turn if tools were called
+        if (!finalResponseText && toolCalls.length > 0) {
+            try {
+                const finalRes = await withTimeout(clientInfo.ai.models.generateContent({
                     model: clientInfo.model,
                     contents: contents,
                     config: {
                         systemInstruction,
-                        temperature: 0.2,
+                        temperature: 0.1,
+                        thinkingConfig,
                     },
-                });
-                responseText = responseSummary.text?.trim() || '';
+                }), 20000);
+                finalResponseText = finalRes.text?.trim() || '';
+            }
+            catch {
+                // If model call fails, keep empty to trigger fallback
+            }
+            // Fallback for merchant insights failure: ensure local database tables are presented
+            if (failedToolNames.has('get_merchant_insights')) {
+                const localInsights = await getLocalDatabaseInsights();
+                if (finalResponseText) {
+                    finalResponseText = `${localInsights.tableMarkdown}\n\n### Summary\n${finalResponseText}`;
+                }
+                else {
+                    finalResponseText = localInsights.tableMarkdown;
+                }
             }
             // If still empty, build fallback summary directly from tool results
-            if (!responseText) {
-                responseText = buildFallbackToolSummary(toolCalls, functionResponses);
+            if (!finalResponseText) {
+                finalResponseText = buildFallbackToolSummary(toolCalls, []);
             }
-            return {
-                text: responseText,
-                toolCalls,
-                requestId,
-            };
+        }
+        return {
+            text: finalResponseText || 'Here is the requested information.',
+            toolCalls,
+            requestId,
         };
-        const result = await withTimeout(runTurn(), 8000);
+    };
+    try {
+        // Strict 45-second limit for the whole merchant request
+        const result = await withTimeout(runMerchantFlow(), 45000);
         logger_1.logger.info({ requestId, toolCallsCount: result.toolCalls.length, hasProposedAction: Boolean(result.proposedAction) }, '[ai] Merchant chat processed');
         return result;
     }
     catch (err) {
+        const isTimeout = err?.name === 'TimeoutError' ||
+            (typeof err?.message === 'string' && (err.message.toLowerCase().includes('timed out') || err.message.includes('timeout')));
+        if (isTimeout) {
+            logger_1.logger.warn({ requestId, err: err.message }, '[ai] Merchant copilot operation timed out');
+            return {
+                text: "The AI took too long, please try again.",
+                toolCalls,
+                requestId,
+            };
+        }
         const errorCode = extractErrorCode(err);
         const redactedMsg = redactErrorMessage(err?.message);
         const isBadRequest = errorCode === 400 ||
@@ -1116,7 +1545,7 @@ IMPORTANT RULES:
         if (isBadRequest) {
             logger_1.logger.error({
                 requestId,
-                stage,
+                stage: 'model call',
                 errorCode: 400,
                 errorMessage: redactedMsg,
             }, '[ai] Merchant copilot 400 Bad Request error');
@@ -1124,13 +1553,12 @@ IMPORTANT RULES:
         }
         logger_1.logger.warn({
             requestId,
-            stage,
             errorCode,
             errorMessage: redactedMsg,
-        }, '[ai] Merchant chat error or timeout, falling back');
+        }, '[ai] Merchant chat error, falling back');
         return {
             text: "I'm having a slight connection delay right now. You can retry with a specific inquiry such as 'List invoices' or check your PayPal dashboard directly.",
-            toolCalls: [],
+            toolCalls,
             requestId,
         };
     }

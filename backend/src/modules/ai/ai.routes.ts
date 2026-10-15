@@ -5,6 +5,7 @@ import { aiRateLimiter, optionalAuthMiddleware } from './ai.middleware';
 import {
     merchantHandler,
     merchantActionHandler,
+    merchantQuickChipHandler,
     assistantHandler,
 } from './ai.controller';
 
@@ -16,6 +17,7 @@ router.use(aiRateLimiter as any);
 // ── Admin Merchant Agent ──────────────────────────────────────────────────────
 router.post('/merchant', authMiddleware as any, adminMiddleware as any, merchantHandler);
 router.post('/merchant/action', authMiddleware as any, adminMiddleware as any, merchantActionHandler);
+router.post('/merchant/quick-chip', authMiddleware as any, adminMiddleware as any, merchantQuickChipHandler);
 
 // ── Customer Shopping Assistant ───────────────────────────────────────────────
 router.post('/assistant', optionalAuthMiddleware as any, assistantHandler);
